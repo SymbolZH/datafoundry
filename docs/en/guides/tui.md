@@ -1,0 +1,167 @@
+# TUI guide
+
+This guide is for terminal users, remote server users, and developers. After reading it, you can start the TUI, connect to the backend, select data sources or Skills, restore server sessions, and view runs and outputs in the terminal.
+
+## How to start
+
+Start the full dev stack or backend first:
+
+```bash
+npm run dev
+```
+
+Start the TUI:
+
+```bash
+npm run start:tui
+```
+
+Point at a specific runtime URL:
+
+```bash
+npm run start:tui -- --runtime-url http://127.0.0.1:8787/api/copilotkit
+```
+
+Set default data source and agent name:
+
+```bash
+npm run start:tui -- --datasource-id api-duckdb-demo --agent dataFoundry
+```
+
+Resume the latest server session:
+
+```bash
+npm run start:tui -- --resume
+```
+
+Resume a specific thread/session:
+
+```bash
+npm run start:tui -- --resume thread-001
+```
+
+Demo mode does not connect to the backend—useful for layout, commands, and simulated event streams:
+
+```bash
+npm run start:tui -- --demo
+```
+
+View CLI flags:
+
+```bash
+npm run start:tui -- --help
+```
+
+## Main views
+
+The TUI has four views:
+
+| View | Purpose |
+| --- | --- |
+| Chat | Talk to the agent; view streaming replies, tool calls, and results. |
+| Stats | Session stats, step progress, and run status. |
+| Config | Workspace configuration and resource status. |
+| Outputs | Outputs for the current session. |
+
+Switch with `/tab <name>`, or directly with `/chat`, `/stats`, `/config`, `/outputs`.
+
+## Slash commands
+
+Type `/` and use `Tab` to complete. Built-in commands:
+
+| Command | Action | Example |
+| --- | --- | --- |
+| `/help` | List available commands. | `/help` |
+| `/clear` | Clear current chat display. | `/clear` |
+| `/status` | Show thread, message count, current data source and Skill. | `/status` |
+| `/tab <chat\|stats\|config\|outputs>` | Switch view. | `/tab outputs` |
+| `/chat` | Switch to Chat view. | `/chat` |
+| `/stats` | Switch to Stats view. | `/stats` |
+| `/config` | Switch to Config view. | `/config` |
+| `/outputs` | Switch to Outputs view. | `/outputs` |
+| `/datasource` | List or select a data source. | `/datasource list` |
+| `/skill` | Open Skill picker, list, or select a Skill. | `/skill show` |
+| `/reset` | Create a new local session. | `/reset` |
+| `/resume [latest\|list\|sessionId]` | Restore a server session. | `/resume list` |
+| `/exit` | Exit the TUI. | `/exit` |
+
+`/datasource` usage:
+
+```text
+/datasource
+/datasource list
+/datasource current
+/datasource select <id>
+/datasource <id>
+```
+
+`/skill` usage:
+
+```text
+/skill
+/skill show
+/skill current
+/skill select <id>
+/skill <id>
+/<skill-id>
+```
+
+## Shortcuts
+
+| Shortcut | Action |
+| --- | --- |
+| `Ctrl+C` | Exit. |
+| `Ctrl+L` | Clear chat display. |
+| `Ctrl+N` | New session. |
+| `PageUp` / `PageDown` | Scroll in Chat view. |
+| `Home` / `End` | Jump to top or bottom of Chat scroll area. |
+| `Tab` | Complete commands in the input box. |
+| `↑` / `↓` | Browse input history. |
+| `Ctrl+U` | Clear current input. |
+| `Ctrl+W` | Delete the previous word in input. |
+| `Enter` | Send message or run command. |
+
+## Runtime behavior
+
+When connected to a real backend, the TUI sends natural-language input to `/api/copilotkit` and writes the current data source, enabled resources, and Skill selection into `run_config`. AG-UI events from the backend appear in Chat, Stats, and Outputs as text, tool calls, run state, and outputs.
+
+`/resume` depends on `/api/v1/sessions` and `/api/v1/sessions/:id/conversation`. If the backend is unavailable or sessions are unsupported, the TUI shows an error in the command hint area.
+
+Demo mode uses local simulated events and built-in demo state. It does not call a real backend and cannot restore server sessions.
+
+## Typical flow
+
+1. Start backend and TUI.
+2. Run `/status` to see thread, data source, and Skill.
+3. Run `/datasource list` to see available sources.
+4. When needed: `/datasource select api-duckdb-demo`.
+5. Ask a question:
+
+```text
+List tables in the current data source and compute GMV by channel from the orders table.
+```
+
+6. Watch streaming replies and tool calls in Chat.
+7. Run `/stats` for run status.
+8. Run `/outputs` for outputs.
+
+## Compared with the Web workbench
+
+| Dimension | Web workbench | TUI |
+| --- | --- | --- |
+| Environment | Browser, local demos, business analysis. | SSH, remote servers, terminal workflows. |
+| Interaction | Clicks, input box, console. | Keyboard and slash commands. |
+| Trace | Right console, step details, trace list. | Chat, Stats, and Outputs views. |
+| Resources | Forms for create, test, import, preview. | Select data source and Skill; view config state. |
+
+Use the Web workbench for full visual demos. Use the TUI to verify agent runtime over SSH or lightweight terminal environments.
+
+## Troubleshooting
+
+- Cannot connect: confirm `npm run dev` or `npm run dev:api` is running.
+- Backend URL changed: pass full `/api/copilotkit` URL with `--runtime-url`.
+- Model not responding: check `LLM_PROVIDER`, `LLM_MODEL`, `LLM_BASE_URL`, and `LLM_API_KEY` in root `.env`.
+- Session restore fails: confirm `/api/v1/sessions` is reachable and start without `--demo`.
+- Command has no effect: run `/help` and check errors in the command hint area.
+
+Continue with [Web workbench guide](web-workbench.md).

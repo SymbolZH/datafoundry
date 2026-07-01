@@ -1,0 +1,112 @@
+# 能力全览
+
+这篇文档面向评估 DataFoundry 能力范围的用户。读完后，你可以判断 Web、TUI 和 API 分别能做什么，以及哪些能力受后端 capability 或外部资源配置影响。
+
+状态判断以当前代码为准：
+
+| 状态 | 判断方式 |
+| --- | --- |
+| 可直接试用 | 本地 `npm run dev` 后，配好模型 Key，用内置 DuckDB demo 可以跑通。 |
+| 需要配置 | 功能入口已接入，需要你提供模型 Key、数据库凭据、文件、MCP Server 或 Skill package。 |
+| 受 capability 控制 | 读取 `GET /api/v1/capabilities`，按返回值启用或隐藏相关入口。 |
+| 本地开发边界 | 本地默认身份和默认 workspace 可用；生产鉴权、租户隔离和运维策略需要单独设计。 |
+
+## 总览
+
+| 能力 | Web 工作台 | TUI | 后端/API | 检查方式 |
+| --- | --- | --- | --- | --- |
+| 自然语言数据分析 | 可直接试用 | 可直接试用 | 可直接试用 | 配好 LLM Key，使用 `api-duckdb-demo` 提问。 |
+| 内置 DuckDB demo | 可直接试用 | 可直接试用 | 可直接试用 | 数据源列表包含 `api-duckdb-demo`。 |
+| 数据源注册与测试 | 可直接试用 | 可选择已配置数据源 | 可直接试用 | `GET /api/v1/datasource-types`，`POST /api/v1/datasources/:id/test`。 |
+| schema 抓取与表预览 | 可直接试用 | 通过 Agent 工具查看结果 | 可直接试用 | `POST /api/v1/datasources/:id/introspect`，`GET /schema`，`GET /tables/:table/preview`。 |
+| 只读 SQL 分析 | 可直接试用 | 可直接试用 | 可直接试用 | Agent run 先检查 schema，再通过工具执行查询。 |
+| 模型配置 | 需要配置 | 使用服务端模型配置 | 需要配置 | `.env` 或 `/api/v1/model-profiles`。 |
+| 分析追溯 | 可直接试用 | 可直接试用 | 可直接试用 | 查看步骤、工具调用、run events 和 SQL audit。 |
+| Artifact 产出 | 可直接试用 | 可查看会话产出 | 受 capability 控制 | `artifact.list`、`artifact.export`、`artifact.promote`。 |
+| 会话历史 | 可直接试用 | 可用 `/resume` 恢复 | 受 capability 控制 | `conversation.memory`、`conversation.title`。 |
+| 工作区文件 | 可查看、下载、删除 | 通过 run_config 使用已启用文件 | 受 capability 控制 | `files`，`GET/POST /api/v1/files`。 |
+| 对话附件 | 可直接试用 | 不提供附件上传命令 | 受 capability 控制 | `chat.fileUpload`，`POST /api/v1/chat/uploads`。 |
+| 图片输入 | 输入组件受开关控制 | 不提供图片输入命令 | 受 capability 控制 | `chat.imageInput`。 |
+| 知识库 | 需要配置 | 可随启用资源进入 run_config | 受 capability 控制 | `knowledge`、`kb.chunking`、`kb.citationPolicy`。 |
+| MCP 工具 | 需要配置 | 可随启用资源进入 run_config | 受 capability 控制 | `mcp`、`mcp.stdio`、`mcp.toolPolicy`。 |
+| Skill | 需要配置 | 可用 `/skill` 选择 | 受 capability 控制 | `skills`、`skill.resourceBinding`。 |
+| 取消运行 | 可直接试用 | 无 slash 命令 | 可直接试用 | `POST /api/v1/runs/:id/cancel`。 |
+
+## 后端 capability keys
+
+`GET /api/v1/capabilities` 返回以下 key。客户端按这些 key 控制 UI、运行配置和资源入口：
+
+| Key | 控制内容 |
+| --- | --- |
+| `artifact.export` | 产物导出。 |
+| `artifact.list` | 会话产物列表。 |
+| `artifact.promote` | 文件型产物加入工作区。 |
+| `chat.fileUpload` | 对话附件上传。 |
+| `chat.imageInput` | 图片输入。 |
+| `conversation.memory` | 服务端会话记忆。 |
+| `conversation.title` | 会话标题保存。 |
+| `interaction.resume` | 刷新或切换会话后的人工交互恢复。 |
+| `datasource.fieldMasking` | 数据源字段脱敏配置。 |
+| `datasource.extendedTypes` | 扩展数据源类型。 |
+| `datasource.introspectionPolicy` | schema 抓取策略。 |
+| `datasource.queryPolicy` | 查询行数、超时和写入限制策略。 |
+| `datasource.samplePolicy` | 样本预览策略。 |
+| `datasource.server` | 服务端数据库连接字段。 |
+| `files` | 工作区文件资产。 |
+| `kb.chunking` | 知识库分块配置。 |
+| `kb.citationPolicy` | 知识库引用策略。 |
+| `kb.scope` | 知识库作用域。 |
+| `llm.advancedSampling` | 模型扩展采样参数。 |
+| `llm.samplingParams` | 模型采样参数。 |
+| `knowledge` | Knowledge 资源进入运行时。 |
+| `mcp` | MCP 资源进入运行时。 |
+| `mcp.stdio` | stdio MCP Server 配置。 |
+| `mcp.toolPolicy` | MCP 工具策略。 |
+| `skill.resourceBinding` | Skill 资源绑定。 |
+| `skills` | Skill 资源进入运行时。 |
+
+## Web 工作台
+
+Web 工作台适合本地演示和日常分析：
+
+- 左侧管理会话和工作区资源。
+- 中间展示对话、步骤卡片和人工确认。
+- 右侧展示概览、追溯、产出、步骤详情和工作区文件。
+- 输入框支持模型选择、资源开关、`@` 提及、附件上传和停止运行。
+- 会话列表通过服务端 `/api/v1/sessions` 恢复历史。
+
+详见 [Web 工作台指南](guides/web-workbench.md)。
+
+## TUI
+
+TUI 适合远程服务器和终端工作流：
+
+- 支持 Chat、Stats、Config、Outputs 视图。
+- 支持 `/datasource` 选择数据源。
+- 支持 `/skill` 选择 Skill。
+- 支持 `/resume` 恢复服务端历史会话。
+- 支持 `--demo` 查看本地模拟事件流。
+- 支持 `Tab` 命令补全、输入历史和 Chat 视图滚动。
+
+当前注册命令以 [TUI 指南](guides/tui.md) 为准。
+
+## API 与集成
+
+后端提供两类入口：
+
+| 入口 | 用途 |
+| --- | --- |
+| `POST /api/copilotkit` | 启动 Agent run，返回 AG-UI 事件流。 |
+| `/api/v1/*` | 管理资源、文件、会话、产出和配置。 |
+
+集成方应通过配置 API 管理资源，通过 Agent Runtime 启动分析。数据源凭据只在资源创建或更新时提交。
+
+## 安全边界
+
+- 客户端不能把数据库密码、模型 API Key、MCP Token 放进 Agent run body。
+- 读接口不返回明文凭据。
+- SQL 执行经过只读限制、行数限制、超时和审计。
+- 本地开发身份只用于试用和开发集成。
+- 生产部署需要正式鉴权、Secret 管理、审计导出和运维监控。
+
+继续阅读：[安全说明](security.md)。

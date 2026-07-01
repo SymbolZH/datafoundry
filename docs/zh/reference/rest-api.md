@@ -1,0 +1,197 @@
+# REST API 参考
+
+这篇文档面向客户端开发者和集成方。读完后，你可以找到本地 API 地址、响应格式、鉴权头、资源端点、会话端点和产出端点。
+
+默认服务地址：
+
+```text
+http://127.0.0.1:8787
+```
+
+## 通用约定
+
+大多数 JSON 接口返回 envelope：
+
+```json
+{
+  "success": true,
+  "data": {}
+}
+```
+
+错误响应：
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "RESOURCE_NOT_FOUND",
+    "message": "resource not found"
+  }
+}
+```
+
+文件下载和 artifact 下载返回二进制响应；上传接口使用 multipart/form-data。
+
+## 本地开发鉴权
+
+本地开发支持这些请求头：
+
+```text
+Authorization: Bearer <dev_token>
+X-Dev-Token: <dev_token>
+X-Workspace-Id: <workspace_id>
+```
+
+不传请求头时，后端使用开发默认身份和默认 workspace。生产部署需要正式身份系统。
+
+## 健康与能力
+
+| Method | Path | 用途 |
+| --- | --- | --- |
+| GET | `/healthz` | 检查后端是否运行。 |
+| GET | `/api/v1/capabilities` | 读取后端能力开关。 |
+
+```bash
+curl http://127.0.0.1:8787/healthz
+curl http://127.0.0.1:8787/api/v1/capabilities
+```
+
+## Agent Runtime
+
+| Method | Path | 用途 |
+| --- | --- | --- |
+| POST | `/api/copilotkit` | 启动 Agent run，返回 AG-UI 事件流。 |
+| POST | `/api/v1/runs/:id/cancel` | 取消正在运行的 run。 |
+
+`POST /api/copilotkit` 使用 CopilotKit / AG-UI `RunAgentInput`。详见 [Agent Runtime 与 AG-UI 参考](agent-runtime.md)。
+
+## 会话
+
+| Method | Path | 用途 |
+| --- | --- | --- |
+| GET | `/api/v1/sessions` | 列出服务端会话。支持 `limit`、`cursor`。 |
+| PATCH | `/api/v1/sessions/:sessionId` | 更新会话标题。 |
+| GET | `/api/v1/sessions/:sessionId/conversation` | 读取服务端权威对话历史。支持 `limit`。 |
+
+会话接口用于 Web/TUI 恢复历史、显示标题和读取 tool-call 配对。
+
+## 工作区配置
+
+| Method | Path | 用途 |
+| --- | --- | --- |
+| GET | `/api/v1/workspace-config` | 读取工作区资源默认配置。 |
+| PATCH | `/api/v1/workspace-config` | 更新默认启用状态。 |
+| GET | `/api/v1/run-defaults` | 读取 run 默认配置。 |
+
+## 数据源
+
+| Method | Path | 用途 |
+| --- | --- | --- |
+| GET | `/api/v1/datasource-types` | 发现支持的数据源类型和字段 schema。 |
+| GET | `/api/v1/datasources` | 列出数据源。 |
+| POST | `/api/v1/datasources` | 创建数据源。 |
+| GET | `/api/v1/datasources/:id` | 读取数据源详情。 |
+| PATCH | `/api/v1/datasources/:id` | 更新数据源。 |
+| DELETE | `/api/v1/datasources/:id` | 删除数据源。 |
+| POST | `/api/v1/datasources/:id/test` | 测试连接。 |
+| POST | `/api/v1/datasources/:id/introspect` | 抓取 schema，返回 job。 |
+| GET | `/api/v1/datasources/:id/schema` | 读取 schema 快照。支持 `q`、`includeStats`。 |
+| GET | `/api/v1/datasources/:id/tables/:table/preview` | 预览表数据。支持 `schema`、`limit`、`offset`、`orderBy`。 |
+
+后端不暴露任意 SQL REST 入口。SQL 分析通过 Agent 工具执行。
+
+## 模型
+
+| Method | Path | 用途 |
+| --- | --- | --- |
+| GET | `/api/v1/model-profiles` | 列出模型配置。 |
+| POST | `/api/v1/model-profiles` | 创建模型配置。 |
+| GET | `/api/v1/model-profiles/:id` | 读取模型配置。 |
+| PATCH | `/api/v1/model-profiles/:id` | 更新模型配置。 |
+| DELETE | `/api/v1/model-profiles/:id` | 删除模型配置。 |
+| POST | `/api/v1/model-profiles/:id/test` | 测试 provider。 |
+
+## 知识库
+
+| Method | Path | 用途 |
+| --- | --- | --- |
+| GET | `/api/v1/knowledge-bases` | 列出知识库。 |
+| POST | `/api/v1/knowledge-bases` | 创建知识库。 |
+| GET | `/api/v1/knowledge-bases/:id` | 读取知识库。 |
+| PATCH | `/api/v1/knowledge-bases/:id` | 更新知识库。 |
+| DELETE | `/api/v1/knowledge-bases/:id` | 删除知识库。 |
+| POST | `/api/v1/knowledge-bases/:id/test` | 验证配置。 |
+| POST | `/api/v1/knowledge-bases/:id/files` | 上传文档。 |
+| POST | `/api/v1/knowledge-bases/:id/files/import` | 从 FileAssetRef 导入文档。 |
+| POST | `/api/v1/knowledge-bases/:id/search` | 检索调试。 |
+| POST | `/api/v1/knowledge-bases/:id/reindex` | 重建索引，返回 job。 |
+
+## MCP 与 Skill
+
+| Method | Path | 用途 |
+| --- | --- | --- |
+| GET / POST | `/api/v1/mcp-servers` | 列出或创建 MCP Server。 |
+| GET / PATCH / DELETE | `/api/v1/mcp-servers/:id` | 读取、更新或删除 MCP Server。 |
+| POST | `/api/v1/mcp-servers/:id/test` | 测试 MCP Server。 |
+| GET | `/api/v1/mcp-servers/:id/tools` | 拉取 tools manifest。 |
+| GET / POST | `/api/v1/skills` | 列出或上传 Skill。 |
+| POST | `/api/v1/skills/select` | 预览本次 run 的 Skill 筛选结果。 |
+| GET / PATCH / DELETE | `/api/v1/skills/:id` | 读取、更新或删除 Skill。 |
+| POST | `/api/v1/skills/:id/test` | 测试 Skill。 |
+| POST | `/api/v1/skills/:id/validate` | 验证 Skill。 |
+| POST | `/api/v1/skills/:id/replace` | 替换 Skill package。 |
+
+## 文件
+
+| Method | Path | 用途 |
+| --- | --- | --- |
+| GET | `/api/v1/files` | 列出文件资产。支持 `scope`、`origin`、`source`、`sessionId`。 |
+| POST | `/api/v1/files` | 批量上传文件。需在 multipart 字段或请求头提供 session id。 |
+| GET | `/api/v1/files/:id` | 读取文件引用。 |
+| POST | `/api/v1/files/:id/promote` | 把 session-scoped 文件提升为跨会话工作区文件。 |
+| DELETE | `/api/v1/files/:id` | 删除文件引用。 |
+| GET | `/api/v1/files/:id/download` | 下载文件内容。 |
+| POST | `/api/v1/chat/uploads` | 上传本次对话附件。 |
+
+## Artifact
+
+| Method | Path | 用途 |
+| --- | --- | --- |
+| GET | `/api/v1/artifacts?sessionId=:sessionId` | 列出某个会话的产出。 |
+| GET | `/api/v1/artifacts/:id` | 读取产出详情。 |
+| GET | `/api/v1/artifacts/:id/preview` | 读取预览 JSON。 |
+| GET | `/api/v1/artifacts/:id/content` | 读取 inline 内容。 |
+| GET | `/api/v1/artifacts/:id/download` | 下载产出。可带 `format`。 |
+| POST | `/api/v1/artifacts/:id/promote` | 把文件型产出加入工作区文件。 |
+| POST | `/api/v1/artifacts/:id/export` | 导出指定格式，返回 job。 |
+
+## Query History
+
+| Method | Path | 用途 |
+| --- | --- | --- |
+| GET | `/api/v1/query-history` | 列出 SQL 查询历史。支持 `sessionId`、`datasourceId`、`favorite`、`limit`。 |
+| POST | `/api/v1/query-history/:id/favorite` | 收藏一条查询。 |
+| POST | `/api/v1/query-history/:id/unfavorite` | 取消收藏。 |
+| PATCH | `/api/v1/query-history/:id` | 用 `{ "favorite": true \| false }` 更新收藏状态。 |
+
+## Jobs
+
+| Method | Path | 用途 |
+| --- | --- | --- |
+| GET | `/api/v1/jobs/:id` | 查询异步任务。 |
+| POST | `/api/v1/jobs/:id/cancel` | 取消异步任务。 |
+
+## 写入约定
+
+- JSON 请求体默认上限为 1 MiB。
+- `PATCH` 支持 `revision` 或 `If-Match` 乐观并发控制。
+- schema 抓取、索引重建、artifact export 可使用 `Idempotency-Key`。
+- 凭据只在创建或更新资源时提交。
+- 读接口不返回明文密码、Token 或完整连接串。
+
+## 延伸阅读
+
+- 配置模型和资源边界：[配置 API 参考](configuration-api.md)
+- 数据源接入：[数据源指南](../guides/data-sources.md)
+- Agent run：[Agent Runtime 与 AG-UI 参考](agent-runtime.md)

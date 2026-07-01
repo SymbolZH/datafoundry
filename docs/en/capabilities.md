@@ -1,0 +1,112 @@
+# Capabilities
+
+This guide helps you evaluate DataFoundry's capability scope. After reading it, you can tell what Web, TUI, and API each support, and which features depend on backend capabilities or external resource configuration.
+
+Status is based on current code:
+
+| Status | How to verify |
+| --- | --- |
+| Ready to try | After local `npm run dev`, with a model key configured, the built-in DuckDB demo runs end to end. |
+| Requires configuration | Feature entry exists but needs a model key, database credentials, files, MCP server, or Skill package. |
+| Capability-controlled | Read `GET /api/v1/capabilities` and enable or hide related entry points from the response. |
+| Local development boundary | Default local identity and default workspace work out of the box; production auth, tenant isolation, and ops policies need separate design. |
+
+## Overview
+
+| Capability | Web workbench | TUI | Backend/API | How to verify |
+| --- | --- | --- | --- | --- |
+| Natural-language data analysis | Ready to try | Ready to try | Ready to try | Configure LLM key and ask questions with `api-duckdb-demo`. |
+| Built-in DuckDB demo | Ready to try | Ready to try | Ready to try | Data source list includes `api-duckdb-demo`. |
+| Data source registration and test | Ready to try | Select configured sources | Ready to try | `GET /api/v1/datasource-types`, `POST /api/v1/datasources/:id/test`. |
+| Schema fetch and table preview | Ready to try | Via agent tool results | Ready to try | `POST /api/v1/datasources/:id/introspect`, `GET /schema`, `GET /tables/:table/preview`. |
+| Read-only SQL analysis | Ready to try | Ready to try | Ready to try | Agent run inspects schema first, then runs queries through tools. |
+| Model configuration | Requires configuration | Uses server model config | Requires configuration | `.env` or `/api/v1/model-profiles`. |
+| Analysis trace | Ready to try | Ready to try | Ready to try | View steps, tool calls, run events, and SQL audit. |
+| Artifact outputs | Ready to try | View session outputs | Capability-controlled | `artifact.list`, `artifact.export`, `artifact.promote`. |
+| Session history | Ready to try | Resume with `/resume` | Capability-controlled | `conversation.memory`, `conversation.title`. |
+| Workspace files | View, download, delete | Use enabled files via run_config | Capability-controlled | `files`, `GET/POST /api/v1/files`. |
+| Chat attachments | Ready to try | No attachment upload command | Capability-controlled | `chat.fileUpload`, `POST /api/v1/chat/uploads`. |
+| Image input | Input controlled by switch | No image input command | Capability-controlled | `chat.imageInput`. |
+| Knowledge bases | Requires configuration | Enabled resources via run_config | Capability-controlled | `knowledge`, `kb.chunking`, `kb.citationPolicy`. |
+| MCP tools | Requires configuration | Enabled resources via run_config | Capability-controlled | `mcp`, `mcp.stdio`, `mcp.toolPolicy`. |
+| Skills | Requires configuration | Select with `/skill` | Capability-controlled | `skills`, `skill.resourceBinding`. |
+| Cancel run | Ready to try | No slash command | Ready to try | `POST /api/v1/runs/:id/cancel`. |
+
+## Backend capability keys
+
+`GET /api/v1/capabilities` returns the keys below. Clients use them to control UI, run configuration, and resource entry points:
+
+| Key | Controls |
+| --- | --- |
+| `artifact.export` | Artifact export. |
+| `artifact.list` | Session artifact list. |
+| `artifact.promote` | Promote file artifacts into the workspace. |
+| `chat.fileUpload` | Chat attachment upload. |
+| `chat.imageInput` | Image input. |
+| `conversation.memory` | Server-side session memory. |
+| `conversation.title` | Session title persistence. |
+| `interaction.resume` | Human interaction resume after refresh or session switch. |
+| `datasource.fieldMasking` | Data source field masking configuration. |
+| `datasource.extendedTypes` | Extended data source types. |
+| `datasource.introspectionPolicy` | Schema introspection policy. |
+| `datasource.queryPolicy` | Query row limit, timeout, and write-deny policy. |
+| `datasource.samplePolicy` | Sample preview policy. |
+| `datasource.server` | Server database connection fields. |
+| `files` | Workspace file assets. |
+| `kb.chunking` | Knowledge base chunking configuration. |
+| `kb.citationPolicy` | Knowledge base citation policy. |
+| `kb.scope` | Knowledge base scope. |
+| `llm.advancedSampling` | Advanced model sampling parameters. |
+| `llm.samplingParams` | Model sampling parameters. |
+| `knowledge` | Knowledge resources in runtime. |
+| `mcp` | MCP resources in runtime. |
+| `mcp.stdio` | stdio MCP server configuration. |
+| `mcp.toolPolicy` | MCP tool policy. |
+| `skill.resourceBinding` | Skill resource binding. |
+| `skills` | Skill resources in runtime. |
+
+## Web workbench
+
+The Web workbench suits local demos and daily analysis:
+
+- Left panel: sessions and workspace resources.
+- Center: conversation, step cards, and human confirmations.
+- Right: overview, trace, outputs, step details, and workspace files.
+- Input box: model selection, resource toggles, `@` mentions, attachments, and stop run.
+- Session list restores history via server `/api/v1/sessions`.
+
+See [Web workbench guide](guides/web-workbench.md).
+
+## TUI
+
+The TUI suits remote servers and terminal workflows:
+
+- Chat, Stats, Config, and Outputs views.
+- `/datasource` to select a data source.
+- `/skill` to select a Skill.
+- `/resume` to restore server session history.
+- `--demo` for local simulated event streams.
+- `Tab` completion, input history, and Chat view scrolling.
+
+Registered commands are defined in [TUI guide](guides/tui.md).
+
+## API and integration
+
+The backend exposes two entry types:
+
+| Entry | Purpose |
+| --- | --- |
+| `POST /api/copilotkit` | Start an agent run and return an AG-UI event stream. |
+| `/api/v1/*` | Manage resources, files, sessions, outputs, and configuration. |
+
+Integrators should manage resources through the configuration API and start analysis through Agent Runtime. Data source credentials are submitted only when creating or updating resources.
+
+## Security boundaries
+
+- Clients must not put database passwords, model API keys, or MCP tokens in the agent run body.
+- Read APIs do not return plaintext credentials.
+- SQL execution applies read-only limits, row limits, timeouts, and audit.
+- Local development identity is for trials and integration development only.
+- Production deployment needs formal auth, secret management, audit export, and operations monitoring.
+
+Continue with [Security](security.md).
