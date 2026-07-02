@@ -63,21 +63,21 @@ Web 工作台适合可视化复盘，TUI 适合 SSH 和终端工作流，API / A
 ### 本地试用
 启动工作台，并基于内置 DuckDB demo 完成第一次数据分析。
 
-[快速开始](quick-start.md)
+[开始快速体验](quick-start.md){ .df-card-action }
 </div>
 
 <div class="df-card" markdown>
 ### 理解系统
 了解运行时、安全边界和 Data Gateway 架构。
 
-[架构概览](architecture/overview.md)
+[查看架构概览](architecture/overview.md){ .df-card-action }
 </div>
 
 <div class="df-card" markdown>
 ### 接入 API
 使用 REST 配置 API 与 Agent Runtime / AG-UI 入口。
 
-[API 参考](reference/rest-api.md)
+[查看 API 参考](reference/rest-api.md){ .df-card-action }
 </div>
 
 </div>

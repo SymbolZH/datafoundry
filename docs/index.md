@@ -63,21 +63,21 @@ Use the Web workbench for visual analysis review, the TUI for SSH and terminal w
 ### Try locally
 Run the workbench and ask your first question against the built-in DuckDB demo.
 
-[Quick start](en/quick-start.md)
+[Open quick start](en/quick-start.md){ .df-card-action }
 </div>
 
 <div class="df-card" markdown>
 ### Understand the system
 Review the runtime, security boundary, and Data Gateway architecture.
 
-[Architecture](en/architecture/overview.md)
+[Read architecture](en/architecture/overview.md){ .df-card-action }
 </div>
 
 <div class="df-card" markdown>
 ### Integrate APIs
 Use REST configuration APIs and the Agent Runtime / AG-UI entry point.
 
-[API reference](en/reference/rest-api.md)
+[View API reference](en/reference/rest-api.md){ .df-card-action }
 </div>
 
 </div>
