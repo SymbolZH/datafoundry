@@ -160,6 +160,11 @@ import {
   LiveRunProvider,
   useLiveRun,
 } from "./use-data-foundry-run";
+import {
+  DataTaskIdentityProvider,
+  DataTaskUserBar,
+  useDataTaskIdentity,
+} from "./data-task-identity";
 import type { LiveRun } from "./live-run-state";
 import {
   buildProcessToolGroups,
@@ -236,15 +241,17 @@ import {
   type WorkspaceResourceNavAction,
   type WorkspaceResourceNavGroup,
 } from "./session-pane-ui";
-import { getBackendCapabilities, isResourcePanelSupported } from "../../lib/config-api";
+import {
+  getAgentRuntimeUrl,
+  getBackendCapabilities,
+  isResourcePanelSupported,
+} from "../../lib/config-api";
 
 export const dynamic = "force-dynamic";
 
 const agentId = "dataFoundry";
 const defaultDatasourceId = "api-duckdb-demo";
-const runtimeUrl =
-  process.env.NEXT_PUBLIC_AGENT_RUNTIME_URL ??
-  "http://127.0.0.1:8787/api/copilotkit";
+const runtimeUrl = getAgentRuntimeUrl();
 
 export type TaskSelection =
   | { type: "artifact"; id: string }
@@ -449,16 +456,32 @@ function sanitizeWorkspaceConfig(
 }
 
 export default function DataTasksPage() {
+  return (
+    <DataTaskIdentityProvider>
+      <DataTasksCopilotShell />
+    </DataTaskIdentityProvider>
+  );
+}
+
+function DataTasksCopilotShell() {
   const [copilotProperties, setCopilotProperties] = useState<Record<string, unknown>>(
     {},
   );
+  const { authHeaders, scopeKey } = useDataTaskIdentity();
+
+  useEffect(() => {
+    setCopilotProperties({});
+  }, [scopeKey]);
 
   return (
     <CopilotKit
+      key={scopeKey}
       runtimeUrl={runtimeUrl}
       agent={agentId}
+      headers={() => authHeaders}
       useSingleEndpoint
       showDevConsole={false}
+      enableInspector={false}
       properties={copilotProperties}
       onError={(event) => {
         const message =
@@ -484,7 +507,11 @@ export default function DataTasksPage() {
     >
       <CollaborationResponsesProvider>
         <LiveRunProvider>
-          <DataTaskWorkspace onCopilotPropertiesChange={setCopilotProperties} />
+          <DataTaskWorkspace
+            key={scopeKey}
+            identityScopeKey={scopeKey}
+            onCopilotPropertiesChange={setCopilotProperties}
+          />
         </LiveRunProvider>
       </CollaborationResponsesProvider>
     </CopilotKit>
@@ -492,8 +519,10 @@ export default function DataTasksPage() {
 }
 
 function DataTaskWorkspace({
+  identityScopeKey,
   onCopilotPropertiesChange,
 }: {
+  identityScopeKey: string;
   onCopilotPropertiesChange: (properties: Record<string, unknown>) => void;
 }) {
   const {
@@ -698,7 +727,7 @@ function DataTaskWorkspace({
   }, [canDockRightPanel, isConsoleDrawerOpen]);
 
   useEffect(() => {
-    const stored = loadChatSessions();
+    const stored = loadChatSessions(identityScopeKey);
     if (stored.length > 0) {
       setSessions(stored);
       setActiveSessionId(stored[0].id);
@@ -707,7 +736,7 @@ function DataTaskWorkspace({
     const first = createChatSession();
     setSessions([first]);
     setActiveSessionId(first.id);
-  }, []);
+  }, [identityScopeKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -715,9 +744,12 @@ function DataTaskWorkspace({
       .then((response) => {
         if (cancelled) return;
         if (response.sessions.length === 0) {
-          const first = createChatSession();
-          setSessions([first]);
-          setActiveSessionId(first.id);
+          setSessions((current) => {
+            if (current.length > 0) return current;
+            const first = createChatSession();
+            setActiveSessionId(first.id);
+            return [first];
+          });
           setSessionSyncError(null);
           return;
         }
@@ -739,27 +771,27 @@ function DataTaskWorkspace({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [identityScopeKey]);
 
   useEffect(() => {
-    if (sessions.length > 0) persistChatSessions(sessions);
-  }, [sessions]);
+    if (sessions.length > 0) persistChatSessions(sessions, identityScopeKey);
+  }, [identityScopeKey, sessions]);
 
   useEffect(() => {
     if (workspaceLoading) return;
     const enabled = getEnabledLlmItems(workspaceConfig);
     const fallback =
       runDefaults?.activeLlmProfileId ??
-      loadActiveLlmId(workspaceConfig);
+      loadActiveLlmId(workspaceConfig, identityScopeKey);
     const resolved = resolveActiveLlmProfileId(enabled, activeLlmId, fallback);
     if (resolved !== activeLlmId) {
       setActiveLlmId(resolved);
     }
-  }, [workspaceConfig.llm, activeLlmId, runDefaults, workspaceLoading, workspaceConfig]);
+  }, [workspaceConfig.llm, activeLlmId, runDefaults, workspaceLoading, workspaceConfig, identityScopeKey]);
 
   useEffect(() => {
-    if (activeLlmId) persistActiveLlmId(activeLlmId);
-  }, [activeLlmId]);
+    if (activeLlmId) persistActiveLlmId(activeLlmId, identityScopeKey);
+  }, [activeLlmId, identityScopeKey]);
 
   const saveConfigItem = useCallback(
     async (kind: WorkspaceConfigKind, item: WorkspaceConfigItem) => {
@@ -3935,6 +3967,7 @@ function SessionPane({
             />
           </div>
         </div>
+        <DataTaskUserBar compact quickStartGuide={quickStartGuide} />
       </aside>
     );
   }
@@ -4055,7 +4088,6 @@ function SessionPaneContent({
           <h1 className="truncate text-sm font-semibold text-foreground">DataFoundry</h1>
           <p className="text-xs text-muted-light">{sessionCount} sessions</p>
         </div>
-        {!preview ? quickStartGuide : null}
         <button
           type="button"
           onClick={onToggleCollapse}
@@ -4133,6 +4165,12 @@ function SessionPaneContent({
           )}
         </div>
       </div>
+      {!preview ? (
+        <DataTaskUserBar
+          onOpenSettings={() => onOpenConfigPanel("llm")}
+          quickStartGuide={quickStartGuide}
+        />
+      ) : null}
     </div>
   );
 }

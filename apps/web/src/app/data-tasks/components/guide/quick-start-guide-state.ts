@@ -49,12 +49,25 @@ export type QuickStartStepPresentation = {
   blocked?: boolean;
 };
 
-export function hasSeenQuickStartPrompt(storage: QuickStartStorage | null): boolean {
-  return storage?.getItem(QUICK_START_PROMPT_SEEN_STORAGE_KEY) === "true";
+export function getQuickStartPromptSeenStorageKey(userId?: string | null): string {
+  const normalized = userId?.trim();
+  return normalized
+    ? `${QUICK_START_PROMPT_SEEN_STORAGE_KEY}:${encodeURIComponent(normalized)}`
+    : QUICK_START_PROMPT_SEEN_STORAGE_KEY;
 }
 
-export function markQuickStartPromptSeen(storage: QuickStartStorage | null): void {
-  storage?.setItem(QUICK_START_PROMPT_SEEN_STORAGE_KEY, "true");
+export function hasSeenQuickStartPrompt(
+  storage: QuickStartStorage | null,
+  userId?: string | null,
+): boolean {
+  return storage?.getItem(getQuickStartPromptSeenStorageKey(userId)) === "true";
+}
+
+export function markQuickStartPromptSeen(
+  storage: QuickStartStorage | null,
+  userId?: string | null,
+): void {
+  storage?.setItem(getQuickStartPromptSeenStorageKey(userId), "true");
 }
 
 export function markQuickStartDismissed(storage: QuickStartStorage | null): void {
@@ -151,8 +164,8 @@ export function resolveQuickStartStep(
         targetId: "chat-input",
         title: "Send the task",
         body: hasSubmittedTask
-          ? "The task is submitted. Continue to the console to watch how the agent inspects the datasource and runs a read-only query."
-          : "Review the sample task in the chat input, then use the send arrow. This step unlocks after the task is submitted.",
+          ? "The task has started. The agent will inspect the datasource and run a read-only query."
+          : "Review the sample task in the chat input, then click the send arrow. This step unlocks after the run starts.",
         cta: hasSubmittedTask ? "Next" : "Waiting for send",
         blocked: !hasSubmittedTask,
       };

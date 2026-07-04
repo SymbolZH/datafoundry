@@ -1,6 +1,6 @@
 import type { FileAssetService } from "@datafoundry/files";
 import type { ConfigResourceRecord, MetadataStore } from "@datafoundry/metadata";
-import yaml from "js-yaml";
+import * as yaml from "js-yaml";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import yauzl, { type Entry, type ZipFile } from "yauzl";

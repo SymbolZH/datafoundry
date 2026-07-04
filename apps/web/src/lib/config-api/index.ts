@@ -1,4 +1,4 @@
-export { configApi, getConfigApiBaseUrl } from "./client";
+export { configApi, getAgentRuntimeUrl, getConfigApiBaseUrl } from "./client";
 export { ConfigApiError } from "./types";
 export {
   applyBackendCapabilities,
@@ -35,9 +35,13 @@ export type {
   DatasourceTablePreviewColumnDto,
   DatasourceTypeDto,
   DatasourceTypeParamDto,
+  DevIdentitiesResponseDto,
+  DevIdentityUser,
   FileAssetRefDto,
+  IdentityWorkspace,
   JobDto,
   KnowledgeBaseDto,
+  MeResponseDto,
   McpServerDto,
   ModelProfileDto,
   QueryHistoryItemDto,

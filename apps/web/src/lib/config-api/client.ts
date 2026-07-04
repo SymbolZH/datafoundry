@@ -7,9 +7,12 @@ import type {
   DatasourceSchemaDto,
   DatasourceTablePreviewDto,
   DatasourceTypeDto,
+  DevIdentitiesResponseDto,
+  DevIdentityUser,
   FileAssetRefDto,
   JobDto,
   KnowledgeBaseDto,
+  MeResponseDto,
   McpServerDto,
   ModelProfileDto,
   QueryHistoryItemDto,
@@ -25,13 +28,88 @@ import type {
 import { ConfigApiError as ConfigApiErrorClass } from "./types";
 
 const DEFAULT_BASE_URL = "http://127.0.0.1:8787";
+const DEFAULT_WORKSPACE_ID = "default";
+
+export type ConfigApiIdentity = {
+  userId: string;
+  displayName?: string;
+  email?: string;
+  devToken: string;
+};
+
+let currentIdentity: ConfigApiIdentity | null = null;
+
+export function setConfigApiIdentity(identity: ConfigApiIdentity | null): void {
+  currentIdentity = identity;
+}
+
+export function clearConfigApiIdentity(): void {
+  currentIdentity = null;
+}
+
+export function configApiIdentityHeaders(): Record<string, string> {
+  if (isPasswordAuthMode()) {
+    return {};
+  }
+  if (!currentIdentity?.devToken) {
+    return {};
+  }
+  return {
+    Authorization: `Bearer ${currentIdentity.devToken}`,
+    "X-Workspace-Id": DEFAULT_WORKSPACE_ID,
+  };
+}
 
 export function getConfigApiBaseUrl(): string {
+  if (isPasswordAuthMode()) {
+    const configured = process.env.NEXT_PUBLIC_CONFIG_API_URL;
+    if (configured !== undefined) {
+      return configured.replace(/\/$/u, "");
+    }
+    return "";
+  }
   return (
     process.env.NEXT_PUBLIC_CONFIG_API_URL ??
     process.env.NEXT_PUBLIC_AGENT_RUNTIME_URL?.replace(/\/api\/copilotkit\/?$/u, "") ??
     DEFAULT_BASE_URL
   ).replace(/\/$/u, "");
+}
+
+export function isPasswordAuthMode(): boolean {
+  return process.env.NEXT_PUBLIC_DATAFOUNDRY_AUTH_MODE === "password";
+}
+
+export function getAgentRuntimeUrl(): string {
+  if (isPasswordAuthMode()) {
+    return "/api/copilotkit";
+  }
+  return (
+    process.env.NEXT_PUBLIC_AGENT_RUNTIME_URL ??
+    `${DEFAULT_BASE_URL}/api/copilotkit`
+  );
+}
+
+function csrfHeader(method: string | undefined): Record<string, string> {
+  if (!isPasswordAuthMode() || !isUnsafeMethod(method)) {
+    return {};
+  }
+  const token = csrfCookie();
+  return token ? { "X-CSRF-Token": token } : {};
+}
+
+function csrfCookie(): string | undefined {
+  if (typeof document === "undefined") {
+    return undefined;
+  }
+  return document.cookie
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith("df_csrf="))
+    ?.slice("df_csrf=".length);
+}
+
+function isUnsafeMethod(method: string | undefined): boolean {
+  return method === "POST" || method === "PATCH" || method === "PUT" || method === "DELETE";
 }
 
 async function parseJsonResponse<T>(response: Response): Promise<T> {
@@ -57,10 +135,14 @@ async function requestEnvelope<T>(
   init?: RequestInit,
 ): Promise<T> {
   const baseUrl = getConfigApiBaseUrl();
+  const identityHeaders = configApiIdentityHeaders();
   const response = await fetch(`${baseUrl}${path}`, {
     ...init,
+    ...(isPasswordAuthMode() ? { credentials: "same-origin" as RequestCredentials } : {}),
     headers: {
       Accept: "application/json",
+      ...identityHeaders,
+      ...csrfHeader(init?.method),
       ...(init?.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
       ...init?.headers,
     },
@@ -79,7 +161,15 @@ async function requestEnvelope<T>(
 
 async function requestRaw(path: string, init?: RequestInit): Promise<Response> {
   const baseUrl = getConfigApiBaseUrl();
-  const response = await fetch(`${baseUrl}${path}`, init);
+  const response = await fetch(`${baseUrl}${path}`, {
+    ...init,
+    ...(isPasswordAuthMode() ? { credentials: "same-origin" as RequestCredentials } : {}),
+    headers: {
+      ...configApiIdentityHeaders(),
+      ...csrfHeader(init?.method),
+      ...init?.headers,
+    },
+  });
   if (!response.ok) {
     const text = await response.text();
     throw new ConfigApiErrorClass(
@@ -97,6 +187,75 @@ function queryString(params: URLSearchParams): string {
 }
 
 export const configApi = {
+  register(body: { displayName?: string; email: string; password: string }): Promise<{
+    user: { id: string; email?: string; displayName?: string };
+    workspace: { id: string; name?: string };
+    verificationToken?: string;
+  }> {
+    return requestEnvelope("/api/v1/auth/register", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  },
+
+  login(body: { email: string; password: string }): Promise<MeResponseDto> {
+    return requestEnvelope<MeResponseDto>("/api/v1/auth/login", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  },
+
+  verifyEmail(body: { token: string }): Promise<{ user: { id: string; email?: string; displayName?: string } }> {
+    return requestEnvelope("/api/v1/auth/verify-email", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  },
+
+  logout(): Promise<{ ok: boolean }> {
+    return requestEnvelope<{ ok: boolean }>("/api/v1/auth/logout", { method: "POST" });
+  },
+
+  logoutAll(): Promise<{ ok: boolean }> {
+    return requestEnvelope<{ ok: boolean }>("/api/v1/auth/logout-all", { method: "POST" });
+  },
+
+  forgotPassword(body: { email: string }): Promise<{ ok: boolean; resetToken?: string }> {
+    return requestEnvelope("/api/v1/auth/password/forgot", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  },
+
+  resetPassword(body: { password: string; token: string }): Promise<{ ok: boolean }> {
+    return requestEnvelope("/api/v1/auth/password/reset", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  },
+
+  changePassword(body: { currentPassword: string; newPassword: string }): Promise<{ ok: boolean }> {
+    return requestEnvelope("/api/v1/auth/password/change", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  },
+
+  getMe(): Promise<MeResponseDto> {
+    return requestEnvelope<MeResponseDto>("/api/v1/me");
+  },
+
+  getDevIdentities(): Promise<DevIdentitiesResponseDto> {
+    return requestEnvelope<DevIdentitiesResponseDto>("/api/v1/dev/identities");
+  },
+
+  createDevUser(body: { id?: string; email?: string; displayName?: string }): Promise<{ user: DevIdentityUser }> {
+    return requestEnvelope<{ user: DevIdentityUser }>("/api/v1/dev/users", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  },
+
   getCapabilities(): Promise<BackendCapabilitiesResponse> {
     return requestEnvelope<BackendCapabilitiesResponse>("/api/v1/capabilities");
   },

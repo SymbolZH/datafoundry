@@ -1,0 +1,73 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+
+const source = () =>
+  readFileSync(join(process.cwd(), "src/app/data-tasks/data-task-identity.tsx"), "utf8");
+
+describe("data task identity menu", () => {
+  it("keeps the account menu focused on the current user and core actions", () => {
+    const file = source();
+
+    for (const label of [
+      "Settings",
+      "Sign out",
+    ]) {
+      expect(file).toContain(label);
+    }
+
+    expect(file).toContain("AccountMoreIcon");
+    expect(file).toContain("onOpenSettings");
+  });
+
+  it("does not expose placeholder account menu items", () => {
+    const file = source();
+
+    for (const label of [
+      "Personal account",
+      "Profile",
+      "Usage",
+      "Favorites",
+      "API service",
+      "Download desktop",
+      "Download mobile",
+      "Switch account",
+      "Add account",
+      "Local dev users authenticate with dev tokens",
+    ]) {
+      expect(file).not.toContain(label);
+    }
+  });
+
+  it("gives local dev sign out a visible signed-out state", () => {
+    const file = source();
+
+    expect(file).toContain("DEV_SIGNED_OUT_STORAGE_KEY");
+    expect(file).toContain("removeStoredIdentity");
+    expect(file).toContain("Signed out");
+    expect(file).toContain("Continue as Dev User");
+  });
+
+  it("uses a divider-only trigger and a flush animated popover", () => {
+    const file = source();
+
+    expect(file).toContain("bottom-full");
+    expect(file).toContain("account-menu-popover-in");
+    expect(file).toContain("hover:bg-surface/60");
+    expect(file).not.toContain("bottom-[calc(100%+8px)]");
+    expect(file).not.toContain("rounded-lg border border-border bg-surface px-2 py-2");
+  });
+
+  it("exposes production password auth screens and account actions", () => {
+    const file = source();
+
+    for (const label of [
+      "Sign in",
+      "Create account",
+      "Forgot password",
+      "Verify email",
+    ]) {
+      expect(file).toContain(label);
+    }
+  });
+});

@@ -32,9 +32,13 @@ NEXT_PUBLIC_CONFIG_API_URL=http://127.0.0.1:8787
 
 If you only set `NEXT_PUBLIC_AGENT_RUNTIME_URL`, the frontend derives the configuration API root from the `/api/copilotkit` URL.
 
-## First-run guide
+## Identity and first-run guide
 
-First-time users see a quick-start guide. Use the round `?` button near the workspace area to reopen it. The guide can fill an example prompt into the chat input and waits for you to send the task before moving to the console step.
+In local development, the Web workbench starts with a development user and the `default` workspace. The user menu at the bottom of the left pane shows the current user. Local development can switch users through the dev identity API; production password mode shows sign-in, account creation, password reset, and sign-out screens instead.
+
+The Web workbench sends the same identity to configuration REST calls and CopilotKit agent runs. When the user changes, the workbench remounts the data-task workspace so sessions, selected resources, files, artifacts, live run state, and quick-start progress stay scoped to that user.
+
+First-time users see a quick-start guide. Use the round `?` button near the user area to reopen it. The guide can fill an example prompt into the chat input and waits for you to send the task before moving to the console step.
 
 ## Layout
 
@@ -71,6 +75,7 @@ The left panel manages two kinds of content:
 | --- | --- |
 | Data tasks | Create, switch, rename, pin, and delete tasks. |
 | Workspace resources | Manage data sources, knowledge bases, agent tools, and assets. |
+| User menu | View the current user, open settings, sign out, or switch local development users. |
 
 Resource entry points:
 

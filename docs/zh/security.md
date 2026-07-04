@@ -66,10 +66,36 @@ replace-with-your-key
 ```text
 Authorization: Bearer <dev_token>
 X-Dev-Token: <dev_token>
-X-Workspace-Id: <workspace_id>
+X-Workspace-Id: default
 ```
 
-不传请求头时，后端使用开发默认身份和默认 workspace。这个模式适合本地试用和集成开发；生产部署需要正式身份认证、Secret 管理、审计导出、访问控制和运维监控。
+不传请求头时，后端使用开发默认身份和默认 workspace。Web v1 按「一个用户拥有 default workspace」处理，不暴露 workspace 切换。自建客户端时，REST `/api/v1/*` 和 CopilotKit `/api/copilotkit` 必须发送同一组身份头，避免配置、会话、文件、产出和 run history 落到不同用户作用域。
+
+开发期身份接口：
+
+| Method | Path | 用途 |
+| --- | --- | --- |
+| GET | `/api/v1/me` | 读取当前用户和 workspace。 |
+| GET | `/api/v1/dev/identities` | 列出本地开发用户。 |
+| POST | `/api/v1/dev/users` | 创建或更新本地开发用户。 |
+
+`/api/v1/dev/*` 生产默认禁用，除非显式设置 `DATAFOUNDRY_ENABLE_DEV_IDENTITY_API=true`。
+
+## 密码认证模式
+
+设置 `DATAFOUNDRY_AUTH_MODE=password` 后，后端使用基于 Cookie 的密码认证。生产模式默认使用 `password`。必要配置：
+
+```text
+AUTH_SESSION_SECRET=replace-with-at-least-32-random-characters
+AUTH_PUBLIC_BASE_URL=https://datafoundry.example.com
+AUTH_EMAIL_DELIVERY=smtp
+AUTH_EMAIL_FROM=DataFoundry <no-reply@example.com>
+AUTH_SMTP_HOST=smtp.example.com
+```
+
+密码模式提供 `/api/v1/auth/*` 接口，用于注册、登录、邮箱验证、密码重置、退出登录、会话列表和修改密码。非安全方法请求需要携带来自 `df_csrf` Cookie 的 `X-CSRF-Token`。会话 Cookie 名为 `df_session`。
+
+生产部署还需要 Secret 管理、审计导出、访问控制和运维监控。
 
 ## 文档发布检查
 

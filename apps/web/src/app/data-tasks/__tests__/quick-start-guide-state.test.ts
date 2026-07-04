@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   QUICK_START_EXAMPLE_PROMPT,
+  QUICK_START_PROMPT_SEEN_STORAGE_KEY,
   QUICK_START_STEP_ORDER,
+  getQuickStartPromptSeenStorageKey,
   getQuickStartInitialStep,
   hasSeenQuickStartPrompt,
   markQuickStartPromptSeen,
@@ -45,6 +47,21 @@ describe("quick start guide state", () => {
     markQuickStartPromptSeen(storage);
 
     expect(hasSeenQuickStartPrompt(storage)).toBe(true);
+  });
+
+  it("tracks the first quick-start prompt per user", () => {
+    const storage = memoryStorage();
+
+    expect(getQuickStartPromptSeenStorageKey()).toBe(
+      QUICK_START_PROMPT_SEEN_STORAGE_KEY,
+    );
+    expect(hasSeenQuickStartPrompt(storage, "user-a")).toBe(false);
+    expect(hasSeenQuickStartPrompt(storage, "user-b")).toBe(false);
+
+    markQuickStartPromptSeen(storage, "user-a");
+
+    expect(hasSeenQuickStartPrompt(storage, "user-a")).toBe(true);
+    expect(hasSeenQuickStartPrompt(storage, "user-b")).toBe(false);
   });
 
   it("prefers the demo datasource when resolving readiness", () => {

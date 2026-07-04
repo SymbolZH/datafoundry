@@ -61,15 +61,41 @@ When creating resources through REST API, put credentials in resource configurat
 
 ## Local development boundaries
 
-Local development APIs accept dev tokens and a default workspace:
+Local development APIs accept dev tokens and the default workspace:
 
 ```text
 Authorization: Bearer <dev_token>
 X-Dev-Token: <dev_token>
-X-Workspace-Id: <workspace_id>
+X-Workspace-Id: default
 ```
 
-When headers are omitted, the backend uses the development default identity and default workspace. This mode suits local trials and integration development. Production deployment needs formal authentication, secret management, audit export, access control, and operations monitoring.
+When headers are omitted, the backend uses the development default identity and default workspace. Web v1 treats one user as owning `default`; it does not expose workspace switching. If you build a client, send the same identity headers to REST `/api/v1/*` calls and CopilotKit `/api/copilotkit` runs so configuration, sessions, files, artifacts, and run history stay in the same user scope.
+
+Development identity endpoints:
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/api/v1/me` | Read the current user and workspace. |
+| GET | `/api/v1/dev/identities` | List local development users. |
+| POST | `/api/v1/dev/users` | Create or update a local development user. |
+
+`/api/v1/dev/*` is disabled in production unless `DATAFOUNDRY_ENABLE_DEV_IDENTITY_API=true`.
+
+## Password authentication mode
+
+Set `DATAFOUNDRY_AUTH_MODE=password` for cookie-based password authentication. Production mode uses `password` by default. Required settings:
+
+```text
+AUTH_SESSION_SECRET=replace-with-at-least-32-random-characters
+AUTH_PUBLIC_BASE_URL=https://datafoundry.example.com
+AUTH_EMAIL_DELIVERY=smtp
+AUTH_EMAIL_FROM=DataFoundry <no-reply@example.com>
+AUTH_SMTP_HOST=smtp.example.com
+```
+
+Password mode adds `/api/v1/auth/*` endpoints for registration, login, email verification, password reset, logout, session listing, and password change. Unsafe requests require `X-CSRF-Token` from the `df_csrf` cookie. The session cookie is `df_session`.
+
+Production deployment also needs secret management, audit export, access control, and operations monitoring.
 
 ## Documentation release checks
 

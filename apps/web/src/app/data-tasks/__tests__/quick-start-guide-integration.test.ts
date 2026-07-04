@@ -14,6 +14,20 @@ describe("quick start guide integration", () => {
     expect(page).toContain("draftPromptRequest");
   });
 
+  it("places the quick-start launcher in the user bar as a round question button", () => {
+    const page = source("src/app/data-tasks/page.tsx");
+    const guide = source(
+      "src/app/data-tasks/components/guide/QuickStartGuide.tsx",
+    );
+    const identity = source("src/app/data-tasks/data-task-identity.tsx");
+
+    expect(page).toContain("quickStartGuide={quickStartGuide}");
+    expect(identity).toContain("quickStartGuide?: ReactNode");
+    expect(guide).toContain('aria-label="Open quick start guide"');
+    expect(guide).toContain("rounded-full");
+    expect(guide).not.toContain(">Guide<");
+  });
+
   it("provides stable guide anchors for the quick-start path", () => {
     const page = source("src/app/data-tasks/page.tsx");
     const chatInput = source(

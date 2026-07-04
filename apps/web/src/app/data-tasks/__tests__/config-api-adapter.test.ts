@@ -6,14 +6,79 @@ import {
   mcpServerDtoToItem,
   workspaceConfigDtoToStore,
 } from "../../../lib/config-api/adapter";
-import { configApi } from "../../../lib/config-api/client";
+import {
+  clearConfigApiIdentity,
+  configApi,
+  setConfigApiIdentity,
+} from "../../../lib/config-api/client";
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  clearConfigApiIdentity();
   delete process.env.NEXT_PUBLIC_CONFIG_API_URL;
 });
 
 describe("config api adapter", () => {
+  it("adds current dev identity headers to REST requests", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      success: true,
+      data: { "chat.fileUpload": true },
+    }), { headers: { "Content-Type": "application/json" }, status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    setConfigApiIdentity({
+      userId: "tenant-user",
+      displayName: "Tenant User",
+      email: "tenant@example.com",
+      devToken: "tenant-token",
+    });
+
+    await configApi.getCapabilities();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:8787/api/v1/capabilities",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Accept: "application/json",
+          Authorization: "Bearer tenant-token",
+          "X-Workspace-Id": "default",
+        }),
+      }),
+    );
+  });
+
+  it("uses cookie credentials and csrf headers in password auth mode", async () => {
+    process.env.NEXT_PUBLIC_DATAFOUNDRY_AUTH_MODE = "password";
+    process.env.NEXT_PUBLIC_CONFIG_API_URL = "";
+    vi.stubGlobal("document", { cookie: "df_csrf=csrf-token" });
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      success: true,
+      data: { deleted: true, id: "db-1" },
+    }), { headers: { "Content-Type": "application/json" }, status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    setConfigApiIdentity({
+      userId: "tenant-user",
+      displayName: "Tenant User",
+      email: "tenant@example.com",
+      devToken: "tenant-token",
+    });
+
+    await configApi.deleteDatasource("db-1");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/datasources/db-1",
+      expect.objectContaining({
+        credentials: "same-origin",
+        headers: expect.objectContaining({
+          Accept: "application/json",
+          "X-CSRF-Token": "csrf-token",
+        }),
+      }),
+    );
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).not.toMatchObject({
+      Authorization: "Bearer tenant-token",
+    });
+  });
+
   it("maps datasource dto into workspace item settings", () => {
     const item = datasourceDtoToItem({
       id: "sales-pg",

@@ -93,6 +93,12 @@ workspace defaults
 
 这种设计让左侧工作区配置、本次对话选择和后端安全策略保持分离。
 
+## 身份作用域
+
+本地开发使用 dev token 和 `default` workspace。Web v1 不在界面中暴露 workspace 切换，并按用户隔离浏览器状态。REST 配置请求和 CopilotKit AG-UI run 必须使用同一组身份头。
+
+password 模式在 `/api/v1/auth/*` 下提供基于 Cookie 的会话、非安全方法 CSRF 校验、账号注册、登录、密码重置和会话注销。
+
 ## 文件、知识库和产出
 
 文件可以作为可复用 FileAssetRef 存储，也可以作为单次对话附件进入 session workspace。Agent 运行中可通过受控 workspace 工具读取文件。
@@ -103,11 +109,11 @@ workspace defaults
 
 ## 本地开发与生产化边界
 
-当前文档覆盖的是本地优先版本。它适合试用、演示和开发集成。生产化部署通常还需要补充：
+当前文档覆盖本地优先版本和内置 password auth 路径。生产化部署通常还需要补充：
 
-- 正式身份认证和多租户隔离。
 - Secret 管理服务，例如 KMS 或 Vault。
 - 更完整的部署、监控和审计策略。
 - 对外数据库的真实环境 E2E 验证。
+- 如果部署需要多个个人 workspace，还需要 RBAC、组织策略和多 workspace UI。
 
 这些不影响本地演示主路径，但在正式对外交付前需要单独评估。

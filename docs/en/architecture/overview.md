@@ -89,6 +89,12 @@ workspace defaults
 
 This keeps left-panel workspace configuration, per-conversation selection, and backend security policy separate.
 
+## Identity scope
+
+Local development uses dev tokens and the `default` workspace. Web v1 keeps workspace switching out of the UI and scopes browser state by user. REST configuration requests and CopilotKit AG-UI runs must use the same identity headers.
+
+Password mode adds cookie-based sessions, CSRF checks for unsafe methods, account registration, login, password reset, and session revocation under `/api/v1/auth/*`.
+
 ## Files, knowledge bases, and outputs
 
 Files can be stored as reusable FileAssetRef or enter the session workspace as chat attachments. During agent runs, controlled workspace tools read files.
@@ -99,11 +105,11 @@ Artifacts are managed by the Artifact service—common types include tables, cha
 
 ## Local development vs production
 
-Current docs cover the local-first version—suitable for trials, demos, and integration development. Production deployment typically also needs:
+Current docs cover the local-first version and the built-in password-auth path. Production deployment typically also needs:
 
-- Formal authentication and multi-tenant isolation.
 - Secret management such as KMS or Vault.
 - Deployment, monitoring, and audit policies.
 - Real-environment E2E validation against external databases.
+- RBAC, organization policies, and multi-workspace UI if your deployment needs more than one personal workspace.
 
 These do not block the local demo path but should be evaluated before external delivery.

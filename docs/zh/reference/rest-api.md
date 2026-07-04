@@ -33,17 +33,54 @@ http://127.0.0.1:8787
 
 文件下载和 artifact 下载返回二进制响应；上传接口使用 multipart/form-data。
 
-## 本地开发鉴权
+## 身份与鉴权
 
 本地开发支持这些请求头：
 
 ```text
 Authorization: Bearer <dev_token>
 X-Dev-Token: <dev_token>
-X-Workspace-Id: <workspace_id>
+X-Workspace-Id: default
 ```
 
-不传请求头时，后端使用开发默认身份和默认 workspace。生产部署需要正式身份系统。
+不传请求头时，后端使用开发默认身份和默认 workspace。Web v1 不暴露 workspace 切换；除非你在自建集成里管理 workspace 路由，否则使用 `default`。
+
+为了保证本地用户隔离，`/api/v1/*` REST 请求和 `POST /api/copilotkit` 必须发送同一组身份头。如果两条通道使用不同身份，session、资源、文件、产出和 run events 会进入不同用户作用域。
+
+密码模式使用会话 Cookie 和 CSRF：
+
+```text
+DATAFOUNDRY_AUTH_MODE=password
+X-CSRF-Token: <token_from_df_csrf_cookie>
+```
+
+本地开发 token 模式使用 `DATAFOUNDRY_AUTH_MODE=dev`。生产环境默认使用 password 模式，除非显式覆盖。
+
+## 身份接口
+
+| Method | Path | 用途 |
+| --- | --- | --- |
+| GET | `/api/v1/me` | 读取当前用户和 workspace。 |
+| GET | `/api/v1/dev/identities` | 列出本地开发用户。生产默认禁用。 |
+| POST | `/api/v1/dev/users` | 创建或更新本地开发用户。生产默认禁用。 |
+
+## 密码认证接口
+
+这些接口在 password auth 模式下启用：
+
+| Method | Path | 用途 |
+| --- | --- | --- |
+| POST | `/api/v1/auth/register` | 创建用户账号和验证 token。 |
+| POST | `/api/v1/auth/login` | 登录并设置 `df_session` 和 `df_csrf` Cookie。 |
+| POST | `/api/v1/auth/verify-email` | 验证邮箱 token。 |
+| POST | `/api/v1/auth/password/forgot` | 请求密码重置。 |
+| POST | `/api/v1/auth/password/reset` | 使用 token 重置密码。 |
+| GET | `/api/v1/auth/csrf` | 读取当前 CSRF token。 |
+| POST | `/api/v1/auth/logout` | 退出当前会话。 |
+| POST | `/api/v1/auth/logout-all` | 注销当前用户所有会话。 |
+| GET | `/api/v1/auth/sessions` | 列出当前用户的活跃会话。 |
+| DELETE | `/api/v1/auth/sessions/:id` | 注销单个会话。 |
+| POST | `/api/v1/auth/password/change` | 修改当前用户密码。 |
 
 ## 健康与能力
 
@@ -51,6 +88,7 @@ X-Workspace-Id: <workspace_id>
 | --- | --- | --- |
 | GET | `/healthz` | 检查后端是否运行。 |
 | GET | `/api/v1/capabilities` | 读取后端能力开关。 |
+| GET | `/api/v1/me` | 读取当前身份。 |
 
 ```bash
 curl http://127.0.0.1:8787/healthz

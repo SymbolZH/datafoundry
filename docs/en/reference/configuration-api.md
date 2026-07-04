@@ -38,10 +38,19 @@ The backend merges these into an immutable snapshot before handing off to Agent 
 ```text
 Authorization: Bearer <dev_token>
 X-Dev-Token: <dev_token>
-X-Workspace-Id: <workspace_id>
+X-Workspace-Id: default
 ```
 
-When headers are omitted, the backend uses the development default identity and default workspace. Production deployment needs a formal identity system.
+When headers are omitted, the backend uses the development default identity and default workspace. Web v1 treats one user as owning `default`; it does not expose workspace switching.
+
+Use the same identity headers for configuration API calls and AG-UI runs:
+
+```text
+REST /api/v1/*           -> Authorization / X-Dev-Token / X-Workspace-Id
+CopilotKit /api/copilotkit -> Authorization / X-Dev-Token / X-Workspace-Id
+```
+
+This keeps workspace defaults, server sessions, file assets, artifacts, SQL audit, and run history in one user scope. In password auth mode, cookies identify the user and unsafe requests also send `X-CSRF-Token`.
 
 ## Common resource fields
 

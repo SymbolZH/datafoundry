@@ -176,6 +176,8 @@ export type AppErrorCode =
   | "BAD_REQUEST"
   | "CONFLICT"
   | "DATASOURCE_TEST_FAILED"
+  | "EMAIL_NOT_VERIFIED"
+  | "FORBIDDEN"
   | "INTERNAL_ERROR"
   | "JOB_NOT_FOUND"
   | "PROVIDER_TEST_FAILED"
@@ -190,7 +192,8 @@ export type AppErrorCode =
   | "SQL_BLOCKED"
   | "SQL_TIMEOUT"
   | "PROVIDER_CONFIG_MISSING"
-  | "PROVIDER_RATE_LIMITED";
+  | "PROVIDER_RATE_LIMITED"
+  | "RATE_LIMITED";
 
 export const createSuccessResult = <T>(data: T): ApiResult<T> => ({
   success: true,

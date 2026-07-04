@@ -37,6 +37,14 @@ import { fileURLToPath } from "node:url";
 import { Observable } from "rxjs";
 
 import { handleConfigApiRequest } from "./config-api.js";
+import { loadPasswordAuthConfig, type PasswordAuthConfig } from "./auth/config.js";
+import { AuthService, type AuthIdentity } from "./auth/service.js";
+import {
+  handleAuthApiRequest,
+  isUnsafeMethod,
+  resolvePasswordSessionIdentity,
+  sendAuthError
+} from "./auth/routes.js";
 import { persistCurrentUserMessage } from "./conversation-memory.js";
 import { createRunAgentAssembly, createRunAgentContext } from "./run-agent-assembly.js";
 import { resolveRunConfig } from "./run-config-resolver.js";
@@ -136,6 +144,7 @@ export type CreateServerOptions = {
 
 export const createServer = async (options: CreateServerOptions = {}): Promise<Server> => {
   const envConfig = createEnvConfig(process.env);
+  const authConfig = loadPasswordAuthConfig(process.env);
   const conversationMemoryMode =
     options.conversationMemoryMode
     ?? parseAgentMemoryMode(process.env.MASTRA_CONVERSATION_MEMORY_MODE, "working-memory-readonly");
@@ -177,6 +186,7 @@ export const createServer = async (options: CreateServerOptions = {}): Promise<S
       { conversationMemoryMode }
     );
   const runCancelRegistry = new RunCancelRegistry();
+  const authService = new AuthService(metadataStore, authConfig);
   ensureDevUser(metadataStore);
   ensureDemoDataSource(metadataStore, DEV_USER.id, "api-duckdb-demo");
   await ensureBuiltinConfigResources(fileAssetService, metadataStore, DEV_USER.id, DEFAULT_WORKSPACE_ID);
@@ -195,7 +205,22 @@ export const createServer = async (options: CreateServerOptions = {}): Promise<S
         return;
       }
 
-      const authContext = resolveRequestAuth(request, metadataStore);
+      if (isPasswordAuth(authConfig) && requestUrl.pathname.startsWith("/api/v1/auth/")) {
+        let identity: AuthIdentity | undefined;
+        try {
+          identity = resolvePasswordSessionIdentity(authService, request);
+        } catch {
+          identity = undefined;
+        }
+        if (await handleAuthApiRequest(request, response, requestUrl.pathname, { authService, ...(identity ? { identity } : {}) })) {
+          return;
+        }
+      }
+
+      const authContext = resolveRequestAuth(request, metadataStore, authConfig, authService);
+      if (isPasswordAuth(authConfig) && isUnsafeMethod(request.method)) {
+        authService.validateCsrf(authContext.identity, headerString(request.headers["x-csrf-token"]));
+      }
       if (authContext.user.id === DEV_USER.id) {
         ensureDemoDataSource(metadataStore, authContext.user.id, "api-duckdb-demo");
       }
@@ -250,11 +275,19 @@ export const createServer = async (options: CreateServerOptions = {}): Promise<S
 
       sendJson(response, 404, createErrorResult("RESOURCE_NOT_FOUND", "Route not found."));
     } catch (error) {
+      if (error instanceof Error && error.name === "AuthError") {
+        sendAuthError(response, error);
+        return;
+      }
       const message = error instanceof Error ? error.message : "Unknown server error";
 
       if (!response.headersSent) {
         if (message.startsWith("UNAUTHORIZED:")) {
           sendJson(response, 401, createErrorResult("UNAUTHORIZED", message.slice("UNAUTHORIZED:".length)));
+          return;
+        }
+        if (message.startsWith("FORBIDDEN:")) {
+          sendJson(response, 403, createErrorResult("FORBIDDEN", message.slice("FORBIDDEN:".length)));
           return;
         }
         sendJson(response, 500, createErrorResult("NOT_ENABLED", message));
@@ -832,29 +865,64 @@ const sendCorsPreflight = (response: ServerResponse): void => {
   response.writeHead(204, {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization, Idempotency-Key, If-Match, X-Dev-Token, X-Workspace-Id",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, Idempotency-Key, If-Match, X-CSRF-Token, X-Dev-Token, X-Workspace-Id",
     "Access-Control-Max-Age": "86400"
   });
   response.end();
 };
 
 type RequestAuthContext = {
+  identity: AuthIdentity;
   user: MeResponse;
   workspaceId: string;
 };
 
-const resolveRequestAuth = (request: IncomingMessage, metadataStore: MetadataStore): RequestAuthContext => {
+const resolveRequestAuth = (
+  request: IncomingMessage,
+  metadataStore: MetadataStore,
+  authConfig: PasswordAuthConfig,
+  authService: AuthService
+): RequestAuthContext => {
+  if (isPasswordAuth(authConfig)) {
+    const identity = resolvePasswordSessionIdentity(authService, request);
+    return {
+      identity,
+      user: userRecordToMeResponse(identity.user),
+      workspaceId: identity.workspace.id
+    };
+  }
   const token = extractAuthToken(request);
   const workspaceId = sanitizeWorkspaceId(headerString(request.headers["x-workspace-id"]));
+  const devUser = metadataStore.users.getById({ user_id: DEV_USER.id });
+  const devIdentity = {
+    user: devUser,
+    workspace: { id: workspaceId, name: workspaceId, kind: "personal" as const, owner_user_id: DEV_USER.id, created_at: "", updated_at: "" }
+  };
   if (!token) {
-    return { user: DEV_USER, workspaceId };
+    return { identity: devIdentity, user: DEV_USER, workspaceId };
   }
   const user = metadataStore.users.getByDevToken({ dev_token: token });
   if (!user) {
     throw new Error("UNAUTHORIZED:Invalid local auth token.");
   }
-  return { user: userRecordToMeResponse(user), workspaceId };
+  return {
+    identity: {
+      user,
+      workspace: {
+        id: workspaceId,
+        name: workspaceId,
+        kind: "personal",
+        owner_user_id: user.id,
+        created_at: "",
+        updated_at: ""
+      }
+    },
+    user: userRecordToMeResponse(user),
+    workspaceId
+  };
 };
+
+const isPasswordAuth = (config: PasswordAuthConfig): boolean => config.mode === "password";
 
 const extractAuthToken = (request: IncomingMessage): string | undefined => {
   const authorization = headerString(request.headers.authorization);

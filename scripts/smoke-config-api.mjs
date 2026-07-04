@@ -175,6 +175,34 @@ try {
   assert.equal(invalidToken.response.status, 401);
   assert.equal(invalidToken.body.error.code, "UNAUTHORIZED");
 
+  const defaultMe = await requestJson("/api/v1/me");
+  assert.equal(defaultMe.response.status, 200);
+  assert.equal(defaultMe.body.data.user.id, "dev-user");
+  assert.equal(defaultMe.body.data.workspace.id, "default");
+
+  const identitiesBeforeCreate = await requestJson("/api/v1/dev/identities");
+  assert.equal(identitiesBeforeCreate.response.status, 200);
+  assert(identitiesBeforeCreate.body.data.users.some((user) => user.id === "dev-user"));
+
+  const createdDevUser = await requestJson("/api/v1/dev/users", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      id: "analyst-user",
+      email: "analyst@example.com",
+      displayName: "Analyst User"
+    })
+  });
+  assert.equal(createdDevUser.response.status, 201, JSON.stringify(createdDevUser.body));
+  assert.equal(createdDevUser.body.data.user.id, "analyst-user");
+  assert.equal(createdDevUser.body.data.user.devToken, "dev-token-analyst-user");
+  const analystMe = await requestJson("/api/v1/me", {
+    headers: { "Authorization": "Bearer dev-token-analyst-user" }
+  });
+  assert.equal(analystMe.response.status, 200);
+  assert.equal(analystMe.body.data.user.id, "analyst-user");
+  assert.equal(analystMe.body.data.workspace.id, "default");
+
   const tenantHeaders = {
     "Authorization": "Bearer tenant-token",
     "Content-Type": "application/json",

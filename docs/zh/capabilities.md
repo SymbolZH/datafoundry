@@ -9,7 +9,8 @@
 | 可直接试用 | 本地 `npm run dev` 后，配好模型 Key，用内置 DuckDB demo 可以跑通。 |
 | 需要配置 | 功能入口已接入，需要你提供模型 Key、数据库凭据、文件、MCP Server 或 Skill package。 |
 | 受 capability 控制 | 读取 `GET /api/v1/capabilities`，按返回值启用或隐藏相关入口。 |
-| 本地开发边界 | 本地默认身份和默认 workspace 可用；生产鉴权、租户隔离和运维策略需要单独设计。 |
+| 本地开发边界 | 本地默认身份和默认 workspace 可用；Web 可切换本地开发用户用于隔离验证。 |
+| 密码认证边界 | 内置 password 模式覆盖账号注册、登录、重置、会话 Cookie 和 CSRF；生产部署仍需 Secret 管理、审计导出、访问控制策略和运维监控。 |
 
 ## 总览
 
@@ -24,6 +25,7 @@
 | 分析追溯 | 可直接试用 | 可直接试用 | 可直接试用 | 查看步骤、工具调用、run events 和 SQL audit。 |
 | Artifact 产出 | 可直接试用 | 可查看会话产出 | 受 capability 控制 | `artifact.list`、`artifact.export`、`artifact.promote`。 |
 | 会话历史 | 可直接试用 | 可用 `/resume` 恢复 | 受 capability 控制 | `conversation.memory`、`conversation.title`。 |
+| 用户身份 | 本地开发用户切换和 password auth 界面 | 使用后端身份 | 可直接试用 | `GET /api/v1/me`、`/api/v1/dev/*`、`/api/v1/auth/*`。 |
 | 工作区文件 | 可查看、下载、删除 | 通过 run_config 使用已启用文件 | 受 capability 控制 | `files`，`GET/POST /api/v1/files`。 |
 | 对话附件 | 可直接试用 | 不提供附件上传命令 | 受 capability 控制 | `chat.fileUpload`，`POST /api/v1/chat/uploads`。 |
 | 图片输入 | 输入组件受开关控制 | 不提供图片输入命令 | 受 capability 控制 | `chat.imageInput`。 |
@@ -107,6 +109,6 @@ TUI 适合远程服务器和终端工作流：
 - 读接口不返回明文凭据。
 - SQL 执行经过只读限制、行数限制、超时和审计。
 - 本地开发身份只用于试用和开发集成。
-- 生产部署需要正式鉴权、Secret 管理、审计导出和运维监控。
+- password auth 负责用户会话；生产部署仍需 Secret 管理、审计导出、访问控制策略和运维监控。
 
 继续阅读：[安全说明](security.md)。

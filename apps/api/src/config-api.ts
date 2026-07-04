@@ -39,7 +39,8 @@ import {
   type MetadataStore,
   type QueryHistoryRecord,
   type RunEventRecord,
-  type SessionRecord
+  type SessionRecord,
+  type UserRecord
 } from "@datafoundry/metadata";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -122,6 +123,12 @@ const routeConfigRequest = async (
   const segments = pathname.slice("/api/v1/".length).split("/").filter(Boolean);
   const root = segments[0] ?? "";
 
+  if (root === "me") {
+    return handleMeRequest(request, context);
+  }
+  if (root === "dev") {
+    return handleDevIdentityRequest(request, segments.slice(1), context);
+  }
   if (root === "datasource-types" && request.method === "GET") {
     return ok(await context.dataGateway.supportTypes());
   }
@@ -176,6 +183,57 @@ const routeConfigRequest = async (
   }
   return fail(404, "RESOURCE_NOT_FOUND", `Unknown API resource: ${root}`);
 };
+
+const handleMeRequest = (
+  request: IncomingMessage,
+  context: Required<ConfigApiContext>
+): ConfigApiResponse => {
+  if (request.method !== "GET") {
+    return methodNotAllowed();
+  }
+  const user = context.metadataStore.users.getById({ user_id: context.userId });
+  return ok({
+    user: devIdentityUserDto(user),
+    workspace: defaultWorkspaceDto(context.workspaceId)
+  });
+};
+
+const handleDevIdentityRequest = async (
+  request: IncomingMessage,
+  segments: string[],
+  context: Required<ConfigApiContext>
+): Promise<ConfigApiResponse> => {
+  if (!isDevIdentityApiEnabled()) {
+    return fail(404, "RESOURCE_NOT_FOUND", "Dev identity API is not enabled.");
+  }
+  const resource = segments[0];
+  if (resource === "identities" && request.method === "GET") {
+    return ok({
+      users: context.metadataStore.users.list().map(devIdentityUserDto),
+      currentUserId: context.userId,
+      workspace: defaultWorkspaceDto(context.workspaceId)
+    });
+  }
+  if (resource === "users" && request.method === "POST") {
+    const body = await readJsonBody(request);
+    const id = sanitizeDevUserId(stringValue(body.id) ?? stringValue(body.userId) ?? "");
+    const email = sanitizeOptionalEmail(stringValue(body.email), id);
+    const displayName = sanitizeDisplayName(
+      stringValue(body.displayName) ?? stringValue(body.display_name) ?? id
+    );
+    const user = context.metadataStore.users.upsertDevUser({
+      id,
+      email,
+      display_name: displayName,
+      dev_token: `dev-token-${id}`
+    });
+    return ok({ user: devIdentityUserDto(user) }, 201);
+  }
+  return fail(404, "RESOURCE_NOT_FOUND", `Unknown dev identity resource: ${resource ?? ""}`);
+};
+
+const isDevIdentityApiEnabled = (): boolean =>
+  process.env.NODE_ENV !== "production" || process.env.DATAFOUNDRY_ENABLE_DEV_IDENTITY_API === "true";
 
 const handleChatUpload = async (
   request: IncomingMessage,
@@ -292,9 +350,9 @@ const handleSessionRequest = async (
     if (!title) {
       throw new Error("SESSION_TITLE_REQUIRED");
     }
-    const session = context.metadataStore.sessions.updateTitle({
+    const session = context.metadataStore.sessions.create({
       user_id: context.userId,
-      session_id: sessionId,
+      id: sessionId,
       title: title.slice(0, 80),
       title_source: "user"
     });
@@ -2331,6 +2389,45 @@ const listConfig = (context: Required<ConfigApiContext>, kind: ConfigResourceKin
     user_id: context.userId,
     kind
   }).map(configResourceDto);
+
+const devIdentityUserDto = (user: UserRecord): Record<string, unknown> => ({
+  id: user.id,
+  ...(user.email ? { email: user.email } : {}),
+  ...(user.display_name ? { displayName: user.display_name } : {}),
+  ...(user.dev_token ? { devToken: user.dev_token } : {})
+});
+
+const defaultWorkspaceDto = (workspaceId: string): Record<string, unknown> => ({
+  id: workspaceId,
+  name: workspaceId === DEFAULT_WORKSPACE_ID ? "Default workspace" : workspaceId
+});
+
+const sanitizeDevUserId = (value: string): string => {
+  const id = value.trim();
+  if (!/^[a-zA-Z0-9._-]{1,128}$/u.test(id)) {
+    throw new Error("INVALID_DEV_USER_ID");
+  }
+  return id;
+};
+
+const sanitizeDisplayName = (value: string): string => {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    throw new Error("DEV_USER_DISPLAY_NAME_REQUIRED");
+  }
+  return normalized.slice(0, 80);
+};
+
+const sanitizeOptionalEmail = (value: string | undefined, id: string): string => {
+  const normalized = value?.trim();
+  if (!normalized) {
+    return `${id}@local.dev`;
+  }
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/u.test(normalized)) {
+    throw new Error("INVALID_DEV_USER_EMAIL");
+  }
+  return normalized.slice(0, 254);
+};
 
 const dataSourceDto = (record: DataSourceRecord): Record<string, unknown> => {
   const config = parseRecord(record.config_json);

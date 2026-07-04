@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useDataTaskIdentity } from "../../data-task-identity";
 import type { WorkspaceConfigStore } from "../../data-task-state";
 import type { LiveRun } from "../../live-run-state";
 import {
@@ -75,6 +76,7 @@ export function QuickStartGuide({
   onOpenTaskConsole,
   onUseExampleQuery,
 }: QuickStartGuideProps) {
+  const { scopeKey } = useDataTaskIdentity();
   const readiness = useMemo(
     () => resolveQuickStartReadiness(workspaceConfig),
     [workspaceConfig],
@@ -98,10 +100,10 @@ export function QuickStartGuide({
 
   useEffect(() => {
     const storage = browserStorage();
-    if (hasSeenQuickStartPrompt(storage)) return;
-    markQuickStartPromptSeen(storage);
+    if (hasSeenQuickStartPrompt(storage, scopeKey)) return;
+    markQuickStartPromptSeen(storage, scopeKey);
     setOpen(true);
-  }, []);
+  }, [scopeKey]);
 
   const updateTargetRect = useCallback(() => {
     setTargetRect(measureTarget(step.targetId));
@@ -187,7 +189,7 @@ export function QuickStartGuide({
       <button
         type="button"
         onClick={() => {
-          markQuickStartPromptSeen(browserStorage());
+          markQuickStartPromptSeen(browserStorage(), scopeKey);
           setOpen((value) => !value);
         }}
         className="guide-launcher inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border border-border bg-surface text-sm font-semibold text-foreground shadow-[var(--shadow-card)] transition-colors duration-200 hover:bg-surface-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20"

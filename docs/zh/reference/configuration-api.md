@@ -38,10 +38,19 @@ effectiveRunConfig = merge(workspaceDefaults, perRunOverrides, serverPolicy)
 ```text
 Authorization: Bearer <dev_token>
 X-Dev-Token: <dev_token>
-X-Workspace-Id: <workspace_id>
+X-Workspace-Id: default
 ```
 
-不传请求头时，后端使用开发默认身份和默认 workspace。生产部署需要正式身份系统。
+不传请求头时，后端使用开发默认身份和默认 workspace。Web v1 按「一个用户拥有 default workspace」处理，不暴露 workspace 切换。
+
+配置 API 和 AG-UI run 必须使用同一组身份头：
+
+```text
+REST /api/v1/*             -> Authorization / X-Dev-Token / X-Workspace-Id
+CopilotKit /api/copilotkit -> Authorization / X-Dev-Token / X-Workspace-Id
+```
+
+这样工作区默认资源、服务端会话、文件资产、产出、SQL audit 和 run history 会留在同一个用户作用域。密码认证模式下，Cookie 负责识别用户，非安全方法还需要发送 `X-CSRF-Token`。
 
 ## 通用资源字段
 
