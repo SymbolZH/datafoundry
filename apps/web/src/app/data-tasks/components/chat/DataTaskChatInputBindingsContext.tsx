@@ -15,6 +15,11 @@ import type {
 } from "../../data-task-state";
 import type { LiveRunStatus } from "../../live-run-state";
 
+export type DataTaskDraftPromptRequest = {
+  id: number;
+  text: string;
+};
+
 export type DataTaskChatInputBindings = {
   activeLlmId: string | null;
   llmOptions: WorkspaceConfigItem[];
@@ -34,6 +39,7 @@ export type DataTaskChatInputBindings = {
   activeSession: ChatSession | null;
   sessionStartedHints?: SessionStartedHints;
   onToggleSessionResource: (kind: PerRunMentionKind, id: string) => void;
+  draftPromptRequest: DataTaskDraftPromptRequest | null;
   chatColumnWidth: number;
   agentId: string;
   activeThreadId: string | null;

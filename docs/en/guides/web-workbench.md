@@ -32,6 +32,10 @@ NEXT_PUBLIC_CONFIG_API_URL=http://127.0.0.1:8787
 
 If you only set `NEXT_PUBLIC_AGENT_RUNTIME_URL`, the frontend derives the configuration API root from the `/api/copilotkit` URL.
 
+## First-run guide
+
+First-time users see a quick-start guide. Use the round `?` button near the workspace area to reopen it. The guide can fill an example prompt into the chat input and waits for you to send the task before moving to the console step.
+
 ## Layout
 
 The Web workbench has three columns:

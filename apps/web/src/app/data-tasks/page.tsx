@@ -125,6 +125,7 @@ import { DatasourceExplorerPanel } from "./components/DatasourceExplorerPanel";
 import { DatasourceTypeGallery } from "./components/DatasourceTypeGallery";
 import { DatasourceTypeIcon } from "./components/DatasourceTypeIcon";
 import { DataTaskChatInput } from "./components/chat/DataTaskChatInput";
+import { QuickStartGuide } from "./components/guide/QuickStartGuide";
 import { createChatStopHandler } from "./components/chat/chat-stop-handler";
 import {
   CHAT_ATTACHMENT_ACCEPT,
@@ -545,6 +546,10 @@ function DataTaskWorkspace({
   const [perRunFiles, setPerRunFiles] = useState<PerRunFileSelection>(
     emptyPerRunFileSelection,
   );
+  const [draftPromptRequest, setDraftPromptRequest] = useState<{
+    id: number;
+    text: string;
+  } | null>(null);
   const [chatColumnWidth, setChatColumnWidth] = useState(1280);
   const [layoutHydrated, setLayoutHydrated] = useState(false);
 
@@ -1181,6 +1186,7 @@ function DataTaskWorkspace({
       activeSession,
       sessionStartedHints,
       onToggleSessionResource: toggleSessionResourceItem,
+      draftPromptRequest,
       chatColumnWidth,
       agentId,
       activeThreadId: activeThreadId ?? null,
@@ -1197,6 +1203,7 @@ function DataTaskWorkspace({
       activeSession,
       activeThreadId,
       capabilitiesReady,
+      draftPromptRequest,
       applyFirstUserMessageTitle,
       cancelCurrentRun,
       chatColumnWidth,
@@ -1292,26 +1299,27 @@ function DataTaskWorkspace({
     <BackendToolRuntimeProvider runtime={backendToolRuntime}>
       <DataTaskToolRenderers onSelectToolAction={handleSelectToolAction} />
       <div
-      ref={gridRef}
-      className={[
-        "grid h-screen min-h-[560px] overflow-hidden bg-surface-subtle text-foreground",
-        isRightPanelResizing ||
-        isLeftPanelResizing ||
-        isAutoLayout ||
-        isViewportResizing
-          ? ""
-          : "transition-[grid-template-columns] duration-300",
-      ].join(" ")}
-      style={{
-        gridTemplateColumns: getWorkspaceGridTemplateColumns({
-          isConfigPanelOpen: sidePanelOpen,
-          isRightPanelOpen: canDockRightPanel && rightPanelOpen,
-          sidebarCollapsed,
-          rightPanelWidth,
-          leftPanelWidth,
-        }),
-      }}
-    >
+        data-guide-id="workspace-layout"
+        ref={gridRef}
+        className={[
+          "grid h-screen min-h-[560px] overflow-hidden bg-surface-subtle text-foreground",
+          isRightPanelResizing ||
+          isLeftPanelResizing ||
+          isAutoLayout ||
+          isViewportResizing
+            ? ""
+            : "transition-[grid-template-columns] duration-300",
+        ].join(" ")}
+        style={{
+          gridTemplateColumns: getWorkspaceGridTemplateColumns({
+            isConfigPanelOpen: sidePanelOpen,
+            isRightPanelOpen: canDockRightPanel && rightPanelOpen,
+            sidebarCollapsed,
+            rightPanelWidth,
+            leftPanelWidth,
+          }),
+        }}
+      >
       <SessionPane
         activeSessionId={activeSession?.id ?? null}
         activeConfigPanel={configPanel}
@@ -1344,6 +1352,25 @@ function DataTaskWorkspace({
         onDeleteSession={deleteSession}
         onTogglePinSession={togglePinSession}
         workspaceConfig={workspaceConfig}
+        quickStartGuide={
+          <QuickStartGuide
+            workspaceConfig={workspaceConfig}
+            liveRun={liveRun}
+            hasSubmittedTask={
+              agentRenderSnapshot.messageCount > 0 ||
+              liveRun.runStatus !== "idle" ||
+              sessionUsage.runCount > 0
+            }
+            onOpenConfigPanel={openConfigPanel}
+            onOpenTaskConsole={openTaskConsole}
+            onUseExampleQuery={(text) =>
+              setDraftPromptRequest((current) => ({
+                id: (current?.id ?? 0) + 1,
+                text,
+              }))
+            }
+          />
+        }
       />
 
       {workspaceFilesPanelOpen ? (
@@ -1432,6 +1459,12 @@ function DataTaskWorkspace({
         onOpenRightPanel={openTaskConsole}
         onChatColumnWidthChange={setChatColumnWidth}
         onToolGroupsChange={handleToolGroupsChange}
+        onUseExamplePrompt={(text) =>
+          setDraftPromptRequest((current) => ({
+            id: (current?.id ?? 0) + 1,
+            text,
+          }))
+        }
         capabilitiesReady={capabilitiesReady}
       />
       </div>
@@ -3817,6 +3850,7 @@ type SessionPaneProps = {
   runningThreadIds: ReadonlySet<string>;
   workspaceFileCount: number;
   workspaceConfig: WorkspaceConfigStore;
+  quickStartGuide?: ReactNode;
   capabilitiesReady: boolean;
   onCreateSession: () => void;
   onOpenConfigPanel: (panel: WorkspaceConfigPanelKey) => void;
@@ -3844,6 +3878,7 @@ function SessionPane({
   runningThreadIds,
   workspaceFileCount,
   workspaceConfig,
+  quickStartGuide,
   capabilitiesReady,
   onCreateSession,
   onOpenConfigPanel,
@@ -3885,6 +3920,7 @@ function SessionPane({
               runningThreadIds={runningThreadIds}
               workspaceFileCount={workspaceFileCount}
               workspaceConfig={workspaceConfig}
+              quickStartGuide={quickStartGuide}
               capabilitiesReady={capabilitiesReady}
               onCreateSession={onCreateSession}
               onOpenConfigPanel={onOpenConfigPanel}
@@ -3932,6 +3968,7 @@ function SessionPane({
         runningThreadIds={runningThreadIds}
         workspaceFileCount={workspaceFileCount}
         workspaceConfig={workspaceConfig}
+        quickStartGuide={quickStartGuide}
         capabilitiesReady={capabilitiesReady}
         onCreateSession={onCreateSession}
         onOpenConfigPanel={onOpenConfigPanel}
@@ -3947,6 +3984,17 @@ function SessionPane({
   );
 }
 
+type SessionPaneContentProps = Omit<
+  SessionPaneProps,
+  | "collapsed"
+  | "leftPanelWidth"
+  | "isLeftPanelResizing"
+  | "onLeftPanelResizeStart"
+  | "onResetLeftPanelWidth"
+> & {
+  preview?: boolean;
+};
+
 function SessionPaneContent({
   activeSessionId,
   activeConfigPanel,
@@ -3957,6 +4005,7 @@ function SessionPaneContent({
   runningThreadIds,
   workspaceFileCount,
   workspaceConfig,
+  quickStartGuide,
   capabilitiesReady,
   onCreateSession,
   onOpenConfigPanel,
@@ -3968,7 +4017,7 @@ function SessionPaneContent({
   onDeleteSession,
   onTogglePinSession,
   preview = false,
-}: Omit<SessionPaneProps, "collapsed"> & { preview?: boolean }) {
+}: SessionPaneContentProps) {
   const previewClassNames = getCollapsedWorkspacePreviewClassNames();
   const resourceNavGroups = getWorkspaceResourceNavGroups({
     workspaceConfig,
@@ -4006,6 +4055,7 @@ function SessionPaneContent({
           <h1 className="truncate text-sm font-semibold text-foreground">DataFoundry</h1>
           <p className="text-xs text-muted-light">{sessionCount} sessions</p>
         </div>
+        {!preview ? quickStartGuide : null}
         <button
           type="button"
           onClick={onToggleCollapse}
@@ -4017,7 +4067,10 @@ function SessionPaneContent({
         </button>
       </div>
 
-      <div className="border-b border-border px-2.5 pt-1.5 pb-1">
+      <div
+        data-guide-id="workspace-resources"
+        className="border-b border-border px-2.5 pt-1.5 pb-1"
+      >
         <div className="mb-0.5 px-0.5">
           <span className={sectionLabelClass}>Workspace Resources</span>
         </div>
@@ -5606,6 +5659,11 @@ function ResourceNavCard({
   return (
     <button
       type="button"
+      data-guide-id={
+        group.action.type === "config" && group.action.panel === "db"
+          ? "datasource-config"
+          : undefined
+      }
       onClick={() => onAction(group.action)}
       className={[
         "group flex min-h-8 w-full cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-1 text-left transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20",
@@ -5715,6 +5773,28 @@ function ProcessToolGroupSync({
   return null;
 }
 
+function ChatWelcomeOverlay({
+  liveRunStatus,
+  onUseExamplePrompt,
+}: {
+  liveRunStatus: LiveRun["runStatus"];
+  onUseExamplePrompt: (prompt: string) => void;
+}) {
+  const chatConfig = useCopilotChatConfiguration();
+  const { agent } = useAgent({ agentId: chatConfig?.agentId ?? agentId });
+  const hasVisibleMessages = (agent.messages?.length ?? 0) > 0 || liveRunStatus !== "idle";
+
+  if (hasVisibleMessages) return null;
+
+  return (
+    <div className="pointer-events-none absolute inset-x-0 top-0 bottom-32 z-10 overflow-y-auto">
+      <div className="pointer-events-auto min-h-full">
+        <DataTaskWelcomeScreen onUsePrompt={onUseExamplePrompt} />
+      </div>
+    </div>
+  );
+}
+
 function ChatPane({
   activeThreadId,
   title,
@@ -5727,6 +5807,7 @@ function ChatPane({
   onOpenRightPanel,
   onChatColumnWidthChange,
   onToolGroupsChange,
+  onUseExamplePrompt,
   capabilitiesReady,
 }: {
   activeThreadId?: string;
@@ -5740,6 +5821,7 @@ function ChatPane({
   onOpenRightPanel: () => void;
   onChatColumnWidthChange: (width: number) => void;
   onToolGroupsChange: (groups: ProcessToolGroup[]) => void;
+  onUseExamplePrompt: (prompt: string) => void;
   capabilitiesReady: boolean;
 }) {
   const { containerRef, chatColumnWidth } = useChatColumnWidth();
@@ -5854,24 +5936,30 @@ function ChatPane({
               threadId={activeThreadId}
               capabilitiesReady={capabilitiesReady}
             />
-            <CopilotChat
-              agentId={agentId}
-              threadId={activeThreadId}
-              key={`copilot-chat-${activeThreadId}`}
-              welcomeScreen={DataTaskWelcomeScreen}
-              autoScroll="pin-to-bottom"
-              intelligenceIndicator={{ className: "chat-intelligence-indicator" }}
-              messageView={{
-                userMessage: StepUserMessage as typeof CopilotChatUserMessage,
-                assistantMessage:
-                  StepAssistantMessage as unknown as typeof CopilotChatAssistantMessage,
-                reasoningMessage:
-                  StepReasoningMessage as unknown as typeof CopilotChatReasoningMessage,
-                cursor: { className: "chat-stream-cursor" },
-              }}
-              input={ChatInput as typeof CopilotChatInput}
-              className={chatPaneClassName}
-            />
+            <div className="relative flex min-h-0 flex-1">
+              <ChatWelcomeOverlay
+                liveRunStatus={liveRunStatus}
+                onUseExamplePrompt={onUseExamplePrompt}
+              />
+              <CopilotChat
+                agentId={agentId}
+                threadId={activeThreadId}
+                key={`copilot-chat-${activeThreadId}`}
+                welcomeScreen={false}
+                autoScroll="pin-to-bottom"
+                intelligenceIndicator={{ className: "chat-intelligence-indicator" }}
+                messageView={{
+                  userMessage: StepUserMessage as typeof CopilotChatUserMessage,
+                  assistantMessage:
+                    StepAssistantMessage as unknown as typeof CopilotChatAssistantMessage,
+                  reasoningMessage:
+                    StepReasoningMessage as unknown as typeof CopilotChatReasoningMessage,
+                  cursor: { className: "chat-stream-cursor" },
+                }}
+                input={ChatInput as typeof CopilotChatInput}
+                className={chatPaneClassName}
+              />
+            </div>
           </CopilotChatConfigurationProvider>
         ) : (
           <ChatInitializingState />

@@ -32,6 +32,10 @@ NEXT_PUBLIC_CONFIG_API_URL=http://127.0.0.1:8787
 
 如果只配置 `NEXT_PUBLIC_AGENT_RUNTIME_URL`，前端会从 `/api/copilotkit` 地址推导配置 API 根地址。
 
+## 首次引导
+
+首次进入的用户会看到快速引导。可以点击工作区附近的圆形 `?` 按钮重新打开。引导可以把示例 prompt 填入输入框，并会等你真正发送任务后再进入控制台步骤。
+
 ## 界面结构
 
 Web 工作台分三栏：

@@ -56,7 +56,11 @@ function SparkIcon({ className }: { className?: string }) {
   );
 }
 
-export function DataTaskWelcomeScreen() {
+export function DataTaskWelcomeScreen({
+  onUsePrompt,
+}: {
+  onUsePrompt?: (prompt: string) => void;
+}) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center px-6 py-10">
       <div className="mb-6 flex h-14 w-14 items-center justify-center rounded-2xl border border-border bg-surface-subtle text-foreground">
@@ -78,16 +82,28 @@ export function DataTaskWelcomeScreen() {
       </div>
       <div className="mt-8 grid w-full max-w-lg gap-3">
         {EXAMPLE_PROMPTS.map((item) => (
-          <div
+          <button
             key={item.title}
-            className="rounded-xl border border-border bg-surface px-4 py-3 shadow-[var(--shadow-card)]"
+            type="button"
+            onClick={() => onUsePrompt?.(item.prompt)}
+            disabled={!onUsePrompt}
+            className="rounded-xl border border-border bg-surface px-4 py-3 text-left shadow-[var(--shadow-card)] transition-colors duration-200 enabled:cursor-pointer enabled:hover:border-primary-light/50 enabled:hover:bg-surface-subtle disabled:cursor-default"
           >
-            <div className="text-sm font-medium text-foreground">{item.title}</div>
-            <p className="mt-0.5 text-xs text-muted-light">{item.description}</p>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-foreground">{item.title}</div>
+                <p className="mt-0.5 text-xs text-muted-light">{item.description}</p>
+              </div>
+              {onUsePrompt ? (
+                <span className="shrink-0 rounded-full border border-border bg-surface-subtle px-2 py-0.5 text-[10px] font-semibold text-muted-light">
+                  Use this prompt
+                </span>
+              ) : null}
+            </div>
             <p className="mt-2 font-mono text-[11px] leading-5 text-muted">
               "{item.prompt}"
             </p>
-          </div>
+          </button>
         ))}
       </div>
       <p className="mt-6 text-xs text-muted-light">
