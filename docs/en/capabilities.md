@@ -9,7 +9,8 @@ Status is based on current code:
 | Ready to try | After local `npm run dev`, with a model key configured, the built-in DuckDB demo runs end to end. |
 | Requires configuration | Feature entry exists but needs a model key, database credentials, files, MCP server, or Skill package. |
 | Capability-controlled | Read `GET /api/v1/capabilities` and enable or hide related entry points from the response. |
-| Local development boundary | Default local identity and default workspace work out of the box; production auth, tenant isolation, and ops policies need separate design. |
+| Local development boundary | Default local identity and default workspace work out of the box; Web can switch local dev users for isolation testing. |
+| Password auth boundary | Built-in password mode covers account registration, login, reset, session cookies, and CSRF. Production deployments still need secret management, audit export, access control policy, and operations monitoring. |
 
 ## Overview
 
@@ -24,6 +25,7 @@ Status is based on current code:
 | Analysis trace | Ready to try | Ready to try | Ready to try | View steps, tool calls, run events, and SQL audit. |
 | Artifact outputs | Ready to try | View session outputs | Capability-controlled | `artifact.list`, `artifact.export`, `artifact.promote`. |
 | Session history | Ready to try | Resume with `/resume` | Capability-controlled | `conversation.memory`, `conversation.title`. |
+| User identity | Local dev switcher and password auth screens | Uses backend identity | Ready to try | `GET /api/v1/me`, `/api/v1/dev/*`, `/api/v1/auth/*`. |
 | Workspace files | View, download, delete | Use enabled files via run_config | Capability-controlled | `files`, `GET/POST /api/v1/files`. |
 | Chat attachments | Ready to try | No attachment upload command | Capability-controlled | `chat.fileUpload`, `POST /api/v1/chat/uploads`. |
 | Image input | Input controlled by switch | No image input command | Capability-controlled | `chat.imageInput`. |
@@ -107,6 +109,6 @@ Integrators should manage resources through the configuration API and start anal
 - Read APIs do not return plaintext credentials.
 - SQL execution applies read-only limits, row limits, timeouts, and audit.
 - Local development identity is for trials and integration development only.
-- Production deployment needs formal auth, secret management, audit export, and operations monitoring.
+- Password auth handles user sessions; production deployment still needs secret management, audit export, access control policy, and operations monitoring.
 
 Continue with [Security](security.md).

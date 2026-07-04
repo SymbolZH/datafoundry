@@ -224,7 +224,10 @@ export function TaskConsole({
       : null;
 
   return (
-    <section className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden border-l border-border bg-surface">
+    <section
+      data-guide-id="run-console"
+      className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden border-l border-border bg-surface"
+    >
       <header className="flex h-16 items-center justify-between gap-3 border-b border-border bg-surface px-4">
         <div className="min-w-0">
           <h2 className={panelTitleClass}>Task Console</h2>
@@ -907,7 +910,7 @@ function DeliverablesZone({
   ) : null;
 
   return (
-    <div className="grid gap-4">
+    <div data-guide-id="run-output" className="grid gap-4">
       <ConsoleSection title="Outputs" badge={badge}>
         {artifacts.length === 0 ? (
           <EmptyState

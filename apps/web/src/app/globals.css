@@ -169,6 +169,62 @@ nextjs-portal {
   }
 }
 
+@keyframes guide-popover-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes account-menu-popover-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.account-menu-popover-in {
+  animation: account-menu-popover-in 140ms ease-out;
+}
+
+@keyframes collapsed-sidebar-preview-in {
+  from {
+    opacity: 0;
+    transform: translateX(-8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+.group:hover .collapsed-sidebar-preview-in,
+.group:focus-within .collapsed-sidebar-preview-in {
+  animation: collapsed-sidebar-preview-in 160ms ease-out;
+}
+
+@keyframes guide-highlight-pulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 9999px rgb(15 15 15 / 0.18),
+      0 0 0 0 rgb(13 13 13 / 0.18);
+  }
+  50% {
+    box-shadow:
+      0 0 0 9999px rgb(15 15 15 / 0.18),
+      0 0 0 6px rgb(13 13 13 / 0.08);
+  }
+}
+
 .step-enter {
   animation: step-in 0.28s ease-out both;
 }
@@ -183,6 +239,14 @@ nextjs-portal {
   animation: caret-blink 1s step-end infinite;
 }
 
+.guide-popover-in {
+  animation: guide-popover-in 0.18s ease-out both;
+}
+
+.guide-highlight-pulse {
+  animation: guide-highlight-pulse 1.8s ease-in-out infinite;
+}
+
 .step-chevron {
   transition: transform 0.2s ease;
 }
@@ -194,7 +258,9 @@ nextjs-portal {
 @media (prefers-reduced-motion: reduce) {
   .step-enter,
   .step-streaming,
-  .caret-blink {
+  .caret-blink,
+  .guide-popover-in,
+  .guide-highlight-pulse {
     animation: none;
   }
 

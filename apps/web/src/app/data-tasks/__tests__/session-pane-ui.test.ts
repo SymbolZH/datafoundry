@@ -66,9 +66,11 @@ describe("session pane ui conventions", () => {
     const classes = getCollapsedWorkspacePreviewClassNames();
 
     expect(classes.panel).toContain("absolute");
-    expect(classes.panel).toContain(`w-[${LEFT_PANEL_MAX_WIDTH}px]`);
+    expect(classes.panel).toContain("w-[256px]");
+    expect(classes.panel).not.toContain(`w-[${LEFT_PANEL_MAX_WIDTH}px]`);
     expect(classes.panel).toContain("-translate-x-2");
     expect(classes.panel).toContain("opacity-0");
+    expect(classes.panel).toContain("collapsed-sidebar-preview-in");
     expect(classes.panel).toContain("transition-[opacity,transform]");
     expect(classes.panel).toContain("group-hover:translate-x-0");
     expect(classes.panel).toContain("group-hover:opacity-100");

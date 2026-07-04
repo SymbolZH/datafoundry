@@ -198,7 +198,7 @@ function DataTaskChatInputLayout({
   onToggleSessionResource: (kind: PerRunMentionKind, id: string) => void;
   attachmentsApi: UseAttachmentsReturn;
 }) {
-  const { chatColumnWidth } = useDataTaskChatInputBindings();
+  const { chatColumnWidth, draftPromptRequest } = useDataTaskChatInputBindings();
   const chatInputWidth = resolveChatInputWidth(chatColumnWidth);
   const mention = useMentionAutocomplete({
     resources: mentionResources,
@@ -218,6 +218,34 @@ function DataTaskChatInputLayout({
     },
     [mention.columnRef, autoresizeRef, attachmentsApi.containerRef],
   );
+
+  useEffect(() => {
+    if (!draftPromptRequest || mode !== "input") return;
+
+    const container = attachmentsApi.containerRef.current;
+    const textarea =
+      container?.querySelector<HTMLTextAreaElement>(
+        "[data-testid=copilot-chat-textarea]",
+      ) ?? container?.querySelector<HTMLTextAreaElement>("textarea");
+    if (!textarea) return;
+
+    const valueSetter = Object.getOwnPropertyDescriptor(
+      window.HTMLTextAreaElement.prototype,
+      "value",
+    )?.set;
+    if (valueSetter) {
+      valueSetter.call(textarea, draftPromptRequest.text);
+    } else {
+      textarea.value = draftPromptRequest.text;
+    }
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    textarea.focus({ preventScroll: true });
+    textarea.setSelectionRange(
+      draftPromptRequest.text.length,
+      draftPromptRequest.text.length,
+    );
+    requestAnimationFrame(scheduleChatTextareaResize);
+  }, [attachmentsApi.containerRef, draftPromptRequest, mode]);
 
   const focusTextArea = (textarea: HTMLTextAreaElement) => {
     textarea.focus({ preventScroll: true });
@@ -263,6 +291,7 @@ function DataTaskChatInputLayout({
         style={{ width: chatInputWidth, maxWidth: "100%" }}
       >
         <div
+          data-guide-id="chat-input"
           data-testid="copilot-chat-input"
           onDragOver={attachmentsApi.handleDragOver}
           onDragLeave={attachmentsApi.handleDragLeave}
@@ -472,7 +501,7 @@ function ChatModelPicker({
   }, [open]);
 
   return (
-    <div ref={rootRef} className="relative">
+    <div ref={rootRef} data-guide-id="model-picker" className="relative">
       <button
         type="button"
         aria-haspopup="listbox"

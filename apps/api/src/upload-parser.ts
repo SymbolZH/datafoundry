@@ -1,6 +1,6 @@
 import Busboy from "busboy";
 import type { IncomingMessage } from "node:http";
-import yaml from "js-yaml";
+import * as yaml from "js-yaml";
 import yauzl, { type Entry, type ZipFile } from "yauzl";
 
 const parseYaml = yaml.load;

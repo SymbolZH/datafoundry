@@ -32,6 +32,14 @@ NEXT_PUBLIC_CONFIG_API_URL=http://127.0.0.1:8787
 
 如果只配置 `NEXT_PUBLIC_AGENT_RUNTIME_URL`，前端会从 `/api/copilotkit` 地址推导配置 API 根地址。
 
+## 身份和首次引导
+
+本地开发时，Web 工作台使用开发用户和 `default` workspace。左侧底部用户菜单展示当前用户。本地开发可通过 dev identity API 切换用户；生产 password 模式展示登录、注册、密码重置和退出登录界面。
+
+Web 工作台会把同一组身份发送给配置 REST 请求和 CopilotKit agent run。用户变化时，工作台会重新挂载数据任务区域，让 session、已选资源、文件、产出、live run 状态和快速引导进度都留在当前用户作用域。
+
+首次进入的用户会看到快速引导。可以点击用户区域附近的圆形 `?` 按钮重新打开。引导可以把示例 prompt 填入输入框，并会等你真正发送任务后再进入控制台步骤。
+
 ## 界面结构
 
 Web 工作台分三栏：
@@ -67,6 +75,7 @@ Web 工作台分三栏：
 | --- | --- |
 | 数据任务 | 新建、切换、重命名、置顶、删除任务。 |
 | 工作区资源 | 管理 Data Sources、Knowledge、Agent Tools 和 Assets。 |
+| 用户菜单 | 查看当前用户、打开设置、退出登录或切换本地开发用户。 |
 
 资源入口说明：
 

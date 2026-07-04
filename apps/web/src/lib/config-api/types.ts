@@ -2,12 +2,15 @@ export type ApiErrorCode =
   | "BAD_REQUEST"
   | "CONFLICT"
   | "DATASOURCE_TEST_FAILED"
+  | "EMAIL_NOT_VERIFIED"
+  | "FORBIDDEN"
   | "INTERNAL_ERROR"
   | "JOB_NOT_FOUND"
   | "NOT_ENABLED"
   | "PARSE_FAILED"
   | "PROVIDER_CONFIG_MISSING"
   | "PROVIDER_RATE_LIMITED"
+  | "RATE_LIMITED"
   | "PROVIDER_TEST_FAILED"
   | "REINDEX_REQUIRED"
   | "RESOURCE_NOT_FOUND"
@@ -33,6 +36,29 @@ export class ConfigApiError extends Error {
     this.status = status;
   }
 }
+
+export type DevIdentityUser = {
+  id: string;
+  email?: string;
+  displayName?: string;
+  devToken?: string;
+};
+
+export type IdentityWorkspace = {
+  id: string;
+  name?: string;
+};
+
+export type MeResponseDto = {
+  user: DevIdentityUser;
+  workspace: IdentityWorkspace;
+};
+
+export type DevIdentitiesResponseDto = {
+  users: DevIdentityUser[];
+  currentUserId: string;
+  workspace: IdentityWorkspace;
+};
 
 export type BackendCapabilitiesResponse = {
   "artifact.export"?: boolean;

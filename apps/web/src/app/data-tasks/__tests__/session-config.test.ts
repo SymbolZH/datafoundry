@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   applyAutoTitle,
   createChatSession,
@@ -7,7 +7,11 @@ import {
   deriveSnippetTitle,
   emptyPerRunSelection,
   getSessionDisabled,
+  loadActiveLlmId,
+  loadChatSessions,
   mergeServerChatSessions,
+  persistActiveLlmId,
+  persistChatSessions,
   prunePerRunSelection,
   renameChatSession,
   serverSessionDtoToChatSession,
@@ -34,6 +38,10 @@ const store: WorkspaceConfigStore = {
   skill: [item("skill-a"), item("skill-b")],
   llm: [item("llm-1")],
 };
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("session config disabled map", () => {
   it("defaults to all enabled when config is omitted", () => {
@@ -204,6 +212,35 @@ describe("session config disabled map", () => {
       "帮我分析一下 最近 30 天不同渠道的订单走势…",
     );
     expect(deriveSnippetTitle("")).toBe("New data task");
+  });
+
+  it("stores sessions and active llm under the current user scope", () => {
+    const storage = new Map<string, string>();
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        setItem: (key: string, value: string) => {
+          storage.set(key, value);
+        },
+      },
+    });
+    const aliceSession = { ...createChatSession("Alice task"), id: "alice-session", threadId: "alice-thread" };
+    const bobSession = { ...createChatSession("Bob task"), id: "bob-session", threadId: "bob-thread" };
+
+    persistChatSessions([aliceSession], "alice");
+    persistChatSessions([bobSession], "bob");
+    const llmStore = {
+      ...store,
+      llm: [item("alice-llm"), item("bob-llm")],
+    };
+
+    persistActiveLlmId("alice-llm", "alice");
+    persistActiveLlmId("bob-llm", "bob");
+
+    expect(loadChatSessions("alice").map((session) => session.id)).toEqual(["alice-session"]);
+    expect(loadChatSessions("bob").map((session) => session.id)).toEqual(["bob-session"]);
+    expect(loadActiveLlmId(llmStore, "alice")).toBe("alice-llm");
+    expect(loadActiveLlmId(llmStore, "bob")).toBe("bob-llm");
   });
 
   it("deletes sessions and keeps pinned sessions ahead of others", () => {

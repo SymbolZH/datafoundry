@@ -19,6 +19,9 @@ export type UserRecord = {
   email?: string;
   display_name?: string;
   dev_token?: string;
+  email_verified_at?: string;
+  disabled_at?: string;
+  password_updated_at?: string;
   created_at: string;
   updated_at: string;
 };
@@ -27,6 +30,66 @@ export type UserContext = {
   user_id: string;
   email?: string;
   display_name?: string;
+};
+
+export type UserPasswordCredentialRecord = {
+  user_id: string;
+  password_hash: string;
+  password_hash_params: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AuthSessionRecord = {
+  id: string;
+  user_id: string;
+  token_hash: string;
+  csrf_token_hash: string;
+  user_agent?: string;
+  ip_address?: string;
+  expires_at: string;
+  revoked_at?: string;
+  created_at: string;
+  last_seen_at: string;
+};
+
+export type AuthTokenPurpose = "email_verification" | "password_reset";
+
+export type AuthTokenRecord = {
+  id: string;
+  user_id: string;
+  purpose: AuthTokenPurpose;
+  token_hash: string;
+  expires_at: string;
+  consumed_at?: string;
+  created_at: string;
+};
+
+export type WorkspaceRecord = {
+  id: string;
+  name: string;
+  kind: "personal";
+  owner_user_id: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type WorkspaceMembershipRecord = {
+  workspace_id: string;
+  user_id: string;
+  role: "owner";
+  created_at: string;
+};
+
+export type AuthAuditEventRecord = {
+  id: string;
+  user_id?: string;
+  email?: string;
+  event_type: string;
+  ip_address?: string;
+  user_agent?: string;
+  metadata_json?: string;
+  created_at: string;
 };
 
 export type SessionRecord = {
@@ -394,6 +457,9 @@ const DEFAULT_DEV_USER = {
 };
 
 export class MetadataStore {
+  readonly authAuditEvents: AuthAuditEventRepository;
+  readonly authSessions: AuthSessionRepository;
+  readonly authTokens: AuthTokenRepository;
   readonly artifacts: ArtifactRepository;
   readonly configJobs: ConfigJobRepository;
   readonly configResources: ConfigResourceRepository;
@@ -410,10 +476,19 @@ export class MetadataStore {
   readonly sessions: SessionRepository;
   readonly secrets: EncryptedSecretStore;
   readonly sqlAuditLogs: SqlAuditLogRepository;
+  readonly userPasswordCredentials: UserPasswordCredentialRepository;
   readonly users: UserRepository;
+  readonly workspaceMemberships: WorkspaceMembershipRepository;
+  readonly workspaces: WorkspaceRepository;
 
   constructor(readonly db: DatabaseSync, secretMasterKey?: string) {
     this.users = new UserRepository(db);
+    this.userPasswordCredentials = new UserPasswordCredentialRepository(db);
+    this.authSessions = new AuthSessionRepository(db);
+    this.authTokens = new AuthTokenRepository(db);
+    this.authAuditEvents = new AuthAuditEventRepository(db);
+    this.workspaces = new WorkspaceRepository(db);
+    this.workspaceMemberships = new WorkspaceMembershipRepository(db);
     this.sessions = new SessionRepository(db);
     this.runs = new RunRepository(db);
     this.runEvents = new RunEventRepository(db);
@@ -558,6 +633,15 @@ export class InteractionRepository {
 export class UserRepository {
   constructor(private readonly db: DatabaseSync) {}
 
+  createPasswordUser(input: { id: string; email: string; display_name?: string }): UserRecord {
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO users (id, email, display_name, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(input.id, input.email.toLowerCase(), input.display_name ?? null, now, now);
+    return this.getById({ user_id: input.id });
+  }
+
   upsertDevUser(input: { id: string; email: string; display_name: string; dev_token: string }): UserRecord {
     const now = new Date().toISOString();
 
@@ -582,6 +666,39 @@ export class UserRepository {
     return mapUserRow(this.db.prepare("SELECT * FROM users WHERE dev_token = ?").get(input.dev_token));
   }
 
+  findByEmail(input: { email: string }): Optional<UserRecord> {
+    return mapUserRow(this.db.prepare("SELECT * FROM users WHERE lower(email) = lower(?)").get(input.email));
+  }
+
+  markEmailVerified(input: { user_id: string; verified_at?: string }): UserRecord {
+    const verifiedAt = input.verified_at ?? new Date().toISOString();
+    this.db.prepare(`
+      UPDATE users SET email_verified_at = ?, updated_at = ? WHERE id = ?
+    `).run(verifiedAt, verifiedAt, input.user_id);
+    return this.getById(input);
+  }
+
+  touchPasswordUpdated(input: { user_id: string; updated_at?: string }): UserRecord {
+    const updatedAt = input.updated_at ?? new Date().toISOString();
+    this.db.prepare(`
+      UPDATE users SET password_updated_at = ?, updated_at = ? WHERE id = ?
+    `).run(updatedAt, updatedAt, input.user_id);
+    return this.getById(input);
+  }
+
+  list(): UserRecord[] {
+    return this.db
+      .prepare("SELECT * FROM users ORDER BY updated_at DESC")
+      .all()
+      .map((row) => {
+        const user = mapUserRow(row);
+        if (!user) {
+          throw new Error("Invalid user row");
+        }
+        return user;
+      });
+  }
+
   getById(input: { user_id: string }): UserRecord {
     const user = mapUserRow(this.db.prepare("SELECT * FROM users WHERE id = ?").get(input.user_id));
 
@@ -590,6 +707,255 @@ export class UserRepository {
     }
 
     return user;
+  }
+}
+
+export class UserPasswordCredentialRepository {
+  constructor(private readonly db: DatabaseSync) {}
+
+  set(input: { user_id: string; password_hash: string; password_hash_params: string }): UserPasswordCredentialRecord {
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO user_password_credentials (user_id, password_hash, password_hash_params, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(user_id) DO UPDATE SET
+        password_hash = excluded.password_hash,
+        password_hash_params = excluded.password_hash_params,
+        updated_at = excluded.updated_at
+    `).run(input.user_id, input.password_hash, input.password_hash_params, now, now);
+    return this.get({ user_id: input.user_id });
+  }
+
+  find(input: { user_id: string }): Optional<UserPasswordCredentialRecord> {
+    return mapUserPasswordCredentialRow(
+      this.db.prepare("SELECT * FROM user_password_credentials WHERE user_id = ?").get(input.user_id)
+    );
+  }
+
+  get(input: { user_id: string }): UserPasswordCredentialRecord {
+    const credential = this.find(input);
+    if (!credential) {
+      throw new Error(`USER_PASSWORD_CREDENTIAL_NOT_FOUND:${input.user_id}`);
+    }
+    return credential;
+  }
+}
+
+export class AuthSessionRepository {
+  constructor(private readonly db: DatabaseSync) {}
+
+  create(input: {
+    id: string;
+    user_id: string;
+    token_hash: string;
+    csrf_token_hash: string;
+    expires_at: string;
+    ip_address?: string;
+    user_agent?: string;
+  }): AuthSessionRecord {
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO auth_sessions (
+        id, user_id, token_hash, csrf_token_hash, user_agent, ip_address,
+        expires_at, created_at, last_seen_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      input.id,
+      input.user_id,
+      input.token_hash,
+      input.csrf_token_hash,
+      input.user_agent ?? null,
+      input.ip_address ?? null,
+      input.expires_at,
+      now,
+      now
+    );
+    return this.get({ id: input.id });
+  }
+
+  findByTokenHash(input: { token_hash: string; now?: string }): Optional<AuthSessionRecord> {
+    const now = input.now ?? new Date().toISOString();
+    return mapAuthSessionRow(this.db.prepare(`
+      SELECT * FROM auth_sessions
+      WHERE token_hash = ? AND revoked_at IS NULL AND expires_at > ?
+    `).get(input.token_hash, now));
+  }
+
+  get(input: { id: string }): AuthSessionRecord {
+    const session = mapAuthSessionRow(this.db.prepare("SELECT * FROM auth_sessions WHERE id = ?").get(input.id));
+    if (!session) {
+      throw new Error(`AUTH_SESSION_NOT_FOUND:${input.id}`);
+    }
+    return session;
+  }
+
+  listByUser(input: { user_id: string }): AuthSessionRecord[] {
+    return this.db.prepare(`
+      SELECT * FROM auth_sessions
+      WHERE user_id = ? AND revoked_at IS NULL AND expires_at > ?
+      ORDER BY last_seen_at DESC
+    `).all(input.user_id, new Date().toISOString())
+      .map(mapAuthSessionRow)
+      .filter((record): record is AuthSessionRecord => Boolean(record));
+  }
+
+  touch(input: { id: string; last_seen_at?: string }): void {
+    this.db.prepare("UPDATE auth_sessions SET last_seen_at = ? WHERE id = ?")
+      .run(input.last_seen_at ?? new Date().toISOString(), input.id);
+  }
+
+  revoke(input: { id: string; revoked_at?: string }): void {
+    this.db.prepare("UPDATE auth_sessions SET revoked_at = COALESCE(revoked_at, ?) WHERE id = ?")
+      .run(input.revoked_at ?? new Date().toISOString(), input.id);
+  }
+
+  revokeByUser(input: { user_id: string; except_session_id?: string; revoked_at?: string }): void {
+    const revokedAt = input.revoked_at ?? new Date().toISOString();
+    if (input.except_session_id) {
+      this.db.prepare(`
+        UPDATE auth_sessions SET revoked_at = COALESCE(revoked_at, ?)
+        WHERE user_id = ? AND id <> ? AND revoked_at IS NULL
+      `).run(revokedAt, input.user_id, input.except_session_id);
+      return;
+    }
+    this.db.prepare(`
+      UPDATE auth_sessions SET revoked_at = COALESCE(revoked_at, ?)
+      WHERE user_id = ? AND revoked_at IS NULL
+    `).run(revokedAt, input.user_id);
+  }
+}
+
+export class AuthTokenRepository {
+  constructor(private readonly db: DatabaseSync) {}
+
+  create(input: {
+    id: string;
+    user_id: string;
+    purpose: AuthTokenPurpose;
+    token_hash: string;
+    expires_at: string;
+  }): AuthTokenRecord {
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO auth_tokens (id, user_id, purpose, token_hash, expires_at, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(input.id, input.user_id, input.purpose, input.token_hash, input.expires_at, now);
+    return this.get({ id: input.id });
+  }
+
+  findValid(input: { purpose: AuthTokenPurpose; token_hash: string; now?: string }): Optional<AuthTokenRecord> {
+    return mapAuthTokenRow(this.db.prepare(`
+      SELECT * FROM auth_tokens
+      WHERE purpose = ? AND token_hash = ? AND consumed_at IS NULL AND expires_at > ?
+    `).get(input.purpose, input.token_hash, input.now ?? new Date().toISOString()));
+  }
+
+  consume(input: { id: string; consumed_at?: string }): AuthTokenRecord {
+    const consumedAt = input.consumed_at ?? new Date().toISOString();
+    this.db.prepare("UPDATE auth_tokens SET consumed_at = COALESCE(consumed_at, ?) WHERE id = ?")
+      .run(consumedAt, input.id);
+    return this.get(input);
+  }
+
+  get(input: { id: string }): AuthTokenRecord {
+    const token = mapAuthTokenRow(this.db.prepare("SELECT * FROM auth_tokens WHERE id = ?").get(input.id));
+    if (!token) {
+      throw new Error(`AUTH_TOKEN_NOT_FOUND:${input.id}`);
+    }
+    return token;
+  }
+}
+
+export class WorkspaceRepository {
+  constructor(private readonly db: DatabaseSync) {}
+
+  createPersonal(input: { id: string; owner_user_id: string; name: string }): WorkspaceRecord {
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO workspaces (id, name, kind, owner_user_id, created_at, updated_at)
+      VALUES (?, ?, 'personal', ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        name = excluded.name,
+        updated_at = excluded.updated_at
+    `).run(input.id, input.name, input.owner_user_id, now, now);
+    return this.get({ id: input.id });
+  }
+
+  get(input: { id: string }): WorkspaceRecord {
+    const workspace = mapWorkspaceRow(this.db.prepare("SELECT * FROM workspaces WHERE id = ?").get(input.id));
+    if (!workspace) {
+      throw new Error(`WORKSPACE_NOT_FOUND:${input.id}`);
+    }
+    return workspace;
+  }
+
+  findPersonalByUser(input: { user_id: string }): Optional<WorkspaceRecord> {
+    return mapWorkspaceRow(this.db.prepare(`
+      SELECT * FROM workspaces WHERE kind = 'personal' AND owner_user_id = ? ORDER BY created_at ASC LIMIT 1
+    `).get(input.user_id));
+  }
+}
+
+export class WorkspaceMembershipRepository {
+  constructor(private readonly db: DatabaseSync) {}
+
+  upsertOwner(input: { workspace_id: string; user_id: string }): WorkspaceMembershipRecord {
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO workspace_memberships (workspace_id, user_id, role, created_at)
+      VALUES (?, ?, 'owner', ?)
+      ON CONFLICT(workspace_id, user_id) DO UPDATE SET role = 'owner'
+    `).run(input.workspace_id, input.user_id, now);
+    return this.get(input);
+  }
+
+  get(input: { workspace_id: string; user_id: string }): WorkspaceMembershipRecord {
+    const membership = mapWorkspaceMembershipRow(this.db.prepare(`
+      SELECT * FROM workspace_memberships WHERE workspace_id = ? AND user_id = ?
+    `).get(input.workspace_id, input.user_id));
+    if (!membership) {
+      throw new Error(`WORKSPACE_MEMBERSHIP_NOT_FOUND:${input.workspace_id}:${input.user_id}`);
+    }
+    return membership;
+  }
+}
+
+export class AuthAuditEventRepository {
+  constructor(private readonly db: DatabaseSync) {}
+
+  append(input: {
+    id: string;
+    event_type: string;
+    email?: string;
+    ip_address?: string;
+    metadata?: unknown;
+    user_agent?: string;
+    user_id?: string;
+  }): AuthAuditEventRecord {
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO auth_audit_events (
+        id, user_id, email, event_type, ip_address, user_agent, metadata_json, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      input.id,
+      input.user_id ?? null,
+      input.email ?? null,
+      input.event_type,
+      input.ip_address ?? null,
+      input.user_agent ?? null,
+      input.metadata === undefined ? null : JSON.stringify(input.metadata),
+      now
+    );
+    return this.get({ id: input.id });
+  }
+
+  get(input: { id: string }): AuthAuditEventRecord {
+    const event = mapAuthAuditEventRow(this.db.prepare("SELECT * FROM auth_audit_events WHERE id = ?").get(input.id));
+    if (!event) {
+      throw new Error(`AUTH_AUDIT_EVENT_NOT_FOUND:${input.id}`);
+    }
+    return event;
   }
 }
 
@@ -1871,6 +2237,9 @@ const runMigrations = (db: DatabaseSync): void => {
       email TEXT UNIQUE,
       display_name TEXT,
       dev_token TEXT UNIQUE,
+      email_verified_at TEXT,
+      disabled_at TEXT,
+      password_updated_at TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -2166,6 +2535,9 @@ const runMigrations = (db: DatabaseSync): void => {
   runSchemaMigration(db, "0009_interaction_interrupt_event", "Ensure interaction interrupt event column", () => {
     ensureInteractionInterruptEventColumn(db);
   });
+  runSchemaMigration(db, "0010_auth_schema", "Ensure password auth metadata schema", () => {
+    initializeAuthSchema(db);
+  });
 };
 
 const initializeSchemaMigrationTable = (db: DatabaseSync): void => {
@@ -2250,6 +2622,106 @@ const ensureInteractionInterruptEventColumn = (db: DatabaseSync): void => {
     .some((row) => isRecord(row) && row.name === "interrupt_event_json");
   if (!hasColumn) {
     db.exec("ALTER TABLE interactions ADD COLUMN interrupt_event_json TEXT");
+  }
+};
+
+const initializeAuthSchema = (db: DatabaseSync): void => {
+  ensureColumn(db, "users", "email_verified_at", "TEXT");
+  ensureColumn(db, "users", "disabled_at", "TEXT");
+  ensureColumn(db, "users", "password_updated_at", "TEXT");
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS user_password_credentials (
+      user_id TEXT PRIMARY KEY,
+      password_hash TEXT NOT NULL,
+      password_hash_params TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS auth_sessions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      token_hash TEXT NOT NULL UNIQUE,
+      csrf_token_hash TEXT NOT NULL,
+      user_agent TEXT,
+      ip_address TEXT,
+      expires_at TEXT NOT NULL,
+      revoked_at TEXT,
+      created_at TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_auth_sessions_user
+      ON auth_sessions(user_id, revoked_at, expires_at);
+
+    CREATE TABLE IF NOT EXISTS auth_tokens (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      purpose TEXT NOT NULL,
+      token_hash TEXT NOT NULL UNIQUE,
+      expires_at TEXT NOT NULL,
+      consumed_at TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_auth_tokens_lookup
+      ON auth_tokens(purpose, token_hash, consumed_at, expires_at);
+
+    CREATE TABLE IF NOT EXISTS workspaces (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      owner_user_id TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (owner_user_id) REFERENCES users(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_workspaces_owner
+      ON workspaces(owner_user_id, kind);
+
+    CREATE TABLE IF NOT EXISTS workspace_memberships (
+      workspace_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      role TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (workspace_id, user_id),
+      FOREIGN KEY (workspace_id) REFERENCES workspaces(id),
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_workspace_memberships_user
+      ON workspace_memberships(user_id, workspace_id);
+
+    CREATE TABLE IF NOT EXISTS auth_audit_events (
+      id TEXT PRIMARY KEY,
+      user_id TEXT,
+      email TEXT,
+      event_type TEXT NOT NULL,
+      ip_address TEXT,
+      user_agent TEXT,
+      metadata_json TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_auth_audit_events_user
+      ON auth_audit_events(user_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_auth_audit_events_email
+      ON auth_audit_events(email, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS auth_rate_limits (
+      bucket TEXT PRIMARY KEY,
+      count INTEGER NOT NULL,
+      reset_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
+};
+
+const ensureColumn = (db: DatabaseSync, table: string, column: string, definition: string): void => {
+  const hasColumn = db.prepare(`PRAGMA table_info(${table})`).all()
+    .some((row) => isRecord(row) && row.name === column);
+  if (!hasColumn) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
   }
 };
 
@@ -2582,14 +3054,117 @@ const mapUserRow = (row: unknown): Optional<UserRecord> => {
   const email = optionalString(row.email);
   const displayName = optionalString(row.display_name);
   const devToken = optionalString(row.dev_token);
+  const emailVerifiedAt = optionalString(row.email_verified_at);
+  const disabledAt = optionalString(row.disabled_at);
+  const passwordUpdatedAt = optionalString(row.password_updated_at);
 
   return {
     id: requiredString(row, "id"),
     ...(email ? { email } : {}),
     ...(displayName ? { display_name: displayName } : {}),
     ...(devToken ? { dev_token: devToken } : {}),
+    ...(emailVerifiedAt ? { email_verified_at: emailVerifiedAt } : {}),
+    ...(disabledAt ? { disabled_at: disabledAt } : {}),
+    ...(passwordUpdatedAt ? { password_updated_at: passwordUpdatedAt } : {}),
     created_at: requiredString(row, "created_at"),
     updated_at: requiredString(row, "updated_at")
+  };
+};
+
+const mapUserPasswordCredentialRow = (row: unknown): Optional<UserPasswordCredentialRecord> => {
+  if (!isRecord(row)) {
+    return undefined;
+  }
+  return {
+    user_id: requiredString(row, "user_id"),
+    password_hash: requiredString(row, "password_hash"),
+    password_hash_params: requiredString(row, "password_hash_params"),
+    created_at: requiredString(row, "created_at"),
+    updated_at: requiredString(row, "updated_at")
+  };
+};
+
+const mapAuthSessionRow = (row: unknown): Optional<AuthSessionRecord> => {
+  if (!isRecord(row)) {
+    return undefined;
+  }
+  const userAgent = optionalString(row.user_agent);
+  const ipAddress = optionalString(row.ip_address);
+  const revokedAt = optionalString(row.revoked_at);
+  return {
+    id: requiredString(row, "id"),
+    user_id: requiredString(row, "user_id"),
+    token_hash: requiredString(row, "token_hash"),
+    csrf_token_hash: requiredString(row, "csrf_token_hash"),
+    ...(userAgent ? { user_agent: userAgent } : {}),
+    ...(ipAddress ? { ip_address: ipAddress } : {}),
+    expires_at: requiredString(row, "expires_at"),
+    ...(revokedAt ? { revoked_at: revokedAt } : {}),
+    created_at: requiredString(row, "created_at"),
+    last_seen_at: requiredString(row, "last_seen_at")
+  };
+};
+
+const mapAuthTokenRow = (row: unknown): Optional<AuthTokenRecord> => {
+  if (!isRecord(row)) {
+    return undefined;
+  }
+  const consumedAt = optionalString(row.consumed_at);
+  return {
+    id: requiredString(row, "id"),
+    user_id: requiredString(row, "user_id"),
+    purpose: requiredString(row, "purpose") as AuthTokenPurpose,
+    token_hash: requiredString(row, "token_hash"),
+    expires_at: requiredString(row, "expires_at"),
+    ...(consumedAt ? { consumed_at: consumedAt } : {}),
+    created_at: requiredString(row, "created_at")
+  };
+};
+
+const mapWorkspaceRow = (row: unknown): Optional<WorkspaceRecord> => {
+  if (!isRecord(row)) {
+    return undefined;
+  }
+  return {
+    id: requiredString(row, "id"),
+    name: requiredString(row, "name"),
+    kind: requiredString(row, "kind") as WorkspaceRecord["kind"],
+    owner_user_id: requiredString(row, "owner_user_id"),
+    created_at: requiredString(row, "created_at"),
+    updated_at: requiredString(row, "updated_at")
+  };
+};
+
+const mapWorkspaceMembershipRow = (row: unknown): Optional<WorkspaceMembershipRecord> => {
+  if (!isRecord(row)) {
+    return undefined;
+  }
+  return {
+    workspace_id: requiredString(row, "workspace_id"),
+    user_id: requiredString(row, "user_id"),
+    role: requiredString(row, "role") as WorkspaceMembershipRecord["role"],
+    created_at: requiredString(row, "created_at")
+  };
+};
+
+const mapAuthAuditEventRow = (row: unknown): Optional<AuthAuditEventRecord> => {
+  if (!isRecord(row)) {
+    return undefined;
+  }
+  const userId = optionalString(row.user_id);
+  const email = optionalString(row.email);
+  const ipAddress = optionalString(row.ip_address);
+  const userAgent = optionalString(row.user_agent);
+  const metadataJson = optionalString(row.metadata_json);
+  return {
+    id: requiredString(row, "id"),
+    ...(userId ? { user_id: userId } : {}),
+    ...(email ? { email } : {}),
+    event_type: requiredString(row, "event_type"),
+    ...(ipAddress ? { ip_address: ipAddress } : {}),
+    ...(userAgent ? { user_agent: userAgent } : {}),
+    ...(metadataJson ? { metadata_json: metadataJson } : {}),
+    created_at: requiredString(row, "created_at")
   };
 };
 

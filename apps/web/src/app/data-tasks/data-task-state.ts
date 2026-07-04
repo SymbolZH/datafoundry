@@ -264,6 +264,17 @@ export interface ChatSession {
 
 const SESSIONS_STORAGE_KEY = "data-tasks:sessions:v2";
 
+function scopedStorageKey(
+  baseKey: string,
+  scopedSuffix: string,
+  scopeKey?: string | null,
+): string {
+  return scopeKey ? `data-tasks:${scopeKey}:${scopedSuffix}` : baseKey;
+}
+
+const SCOPED_SESSIONS_STORAGE_SUFFIX = "sessions:v3";
+const SCOPED_ACTIVE_LLM_STORAGE_SUFFIX = "active-llm:v3";
+
 function newThreadId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
@@ -444,10 +455,12 @@ export function dedupeChatSessions(sessions: ChatSession[]): ChatSession[] {
   return unique;
 }
 
-export function loadChatSessions(): ChatSession[] {
+export function loadChatSessions(scopeKey?: string | null): ChatSession[] {
   if (typeof window === "undefined") return [];
   try {
-    const raw = window.localStorage.getItem(SESSIONS_STORAGE_KEY);
+    const raw = window.localStorage.getItem(
+      scopedStorageKey(SESSIONS_STORAGE_KEY, SCOPED_SESSIONS_STORAGE_SUFFIX, scopeKey),
+    );
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
@@ -457,11 +470,11 @@ export function loadChatSessions(): ChatSession[] {
   }
 }
 
-export function persistChatSessions(sessions: ChatSession[]): void {
+export function persistChatSessions(sessions: ChatSession[], scopeKey?: string | null): void {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(
-      SESSIONS_STORAGE_KEY,
+      scopedStorageKey(SESSIONS_STORAGE_KEY, SCOPED_SESSIONS_STORAGE_SUFFIX, scopeKey),
       JSON.stringify(sessions),
     );
   } catch {
@@ -1103,12 +1116,14 @@ export function getEnabledLlmItems(
   return workspaceConfig.llm;
 }
 
-export function loadActiveLlmId(workspaceConfig: WorkspaceConfigStore): string {
+export function loadActiveLlmId(workspaceConfig: WorkspaceConfigStore, scopeKey?: string | null): string {
   const enabled = getEnabledLlmItems(workspaceConfig);
   const fallback = enabled[0]?.id ?? "server-default";
   if (typeof window === "undefined") return fallback;
   try {
-    const raw = window.localStorage.getItem(ACTIVE_LLM_STORAGE_KEY);
+    const raw = window.localStorage.getItem(
+      scopedStorageKey(ACTIVE_LLM_STORAGE_KEY, SCOPED_ACTIVE_LLM_STORAGE_SUFFIX, scopeKey),
+    );
     if (!raw) return fallback;
     return enabled.some((item) => item.id === raw) ? raw : fallback;
   } catch {
@@ -1116,10 +1131,13 @@ export function loadActiveLlmId(workspaceConfig: WorkspaceConfigStore): string {
   }
 }
 
-export function persistActiveLlmId(llmId: string): void {
+export function persistActiveLlmId(llmId: string, scopeKey?: string | null): void {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(ACTIVE_LLM_STORAGE_KEY, llmId);
+    window.localStorage.setItem(
+      scopedStorageKey(ACTIVE_LLM_STORAGE_KEY, SCOPED_ACTIVE_LLM_STORAGE_SUFFIX, scopeKey),
+      llmId,
+    );
   } catch {
     // Ignore quota errors.
   }

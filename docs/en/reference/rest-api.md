@@ -33,17 +33,54 @@ Error responses:
 
 File downloads and artifact downloads return binary responses; upload endpoints use `multipart/form-data`.
 
-## Local development auth
+## Identity and auth
 
 Local development supports these headers:
 
 ```text
 Authorization: Bearer <dev_token>
 X-Dev-Token: <dev_token>
-X-Workspace-Id: <workspace_id>
+X-Workspace-Id: default
 ```
 
-When headers are omitted, the backend uses the development default identity and default workspace. Production deployment needs a formal identity system.
+When headers are omitted, the backend uses the development default identity and default workspace. Web v1 does not expose workspace switching; use `default` unless you are building an integration that owns workspace routing.
+
+For local user isolation, send the same identity headers to both `/api/v1/*` REST calls and `POST /api/copilotkit`. If the two channels use different headers, sessions, resources, files, artifacts, and run events can appear under different users.
+
+Password mode uses session cookies and CSRF:
+
+```text
+DATAFOUNDRY_AUTH_MODE=password
+X-CSRF-Token: <token_from_df_csrf_cookie>
+```
+
+Use `DATAFOUNDRY_AUTH_MODE=dev` for local dev-token auth. In production, password mode is the default unless overridden.
+
+## Identity endpoints
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/api/v1/me` | Read the current user and workspace. |
+| GET | `/api/v1/dev/identities` | List local development users. Disabled in production by default. |
+| POST | `/api/v1/dev/users` | Create or update a local development user. Disabled in production by default. |
+
+## Password auth endpoints
+
+These endpoints are enabled when password auth mode is active:
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| POST | `/api/v1/auth/register` | Create a user account and verification token. |
+| POST | `/api/v1/auth/login` | Sign in and set `df_session` and `df_csrf` cookies. |
+| POST | `/api/v1/auth/verify-email` | Verify an email token. |
+| POST | `/api/v1/auth/password/forgot` | Request a password reset. |
+| POST | `/api/v1/auth/password/reset` | Reset a password with a token. |
+| GET | `/api/v1/auth/csrf` | Read the current CSRF token. |
+| POST | `/api/v1/auth/logout` | Sign out the current session. |
+| POST | `/api/v1/auth/logout-all` | Revoke all sessions for the current user. |
+| GET | `/api/v1/auth/sessions` | List active sessions for the current user. |
+| DELETE | `/api/v1/auth/sessions/:id` | Revoke one session. |
+| POST | `/api/v1/auth/password/change` | Change the current user's password. |
 
 ## Health and capabilities
 
@@ -51,6 +88,7 @@ When headers are omitted, the backend uses the development default identity and 
 | --- | --- | --- |
 | GET | `/healthz` | Check whether the backend is running. |
 | GET | `/api/v1/capabilities` | Read backend capability switches. |
+| GET | `/api/v1/me` | Read current identity. |
 
 ```bash
 curl http://127.0.0.1:8787/healthz
