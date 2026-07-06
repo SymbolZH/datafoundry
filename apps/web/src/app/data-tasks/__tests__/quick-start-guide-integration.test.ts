@@ -66,7 +66,9 @@ describe("quick start guide integration", () => {
     expect(guide).toContain("onUseExampleQuery");
     expect(guide).not.toContain("navigator.clipboard.writeText");
     expect(bindings).toContain("draftPromptRequest");
+    expect(bindings).toContain("onDraftPromptConsumed");
     expect(chatInput).toContain("dispatchEvent(new Event(\"input\"");
+    expect(chatInput).toContain("onDraftPromptConsumed");
   });
 
   it("renders an explicit empty chat welcome overlay outside CopilotChat internals", () => {
@@ -78,6 +80,14 @@ describe("quick start guide integration", () => {
     expect(page).toContain("<ChatWelcomeOverlay");
     expect(welcome).toContain("onUsePrompt?:");
     expect(welcome).toContain("Use this prompt");
+  });
+
+  it("clears draft prompt requests when switching or creating sessions", () => {
+    const page = source("src/app/data-tasks/page.tsx");
+
+    expect(page).toContain("clearDraftPromptRequest");
+    expect(page).toContain("onCreateSession={createSession}");
+    expect(page).toContain("clearDraftPromptRequest();");
   });
 
   it("shows guide progress and blocks the send step until a task starts", () => {

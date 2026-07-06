@@ -17,7 +17,7 @@ export type RunIdentityResolution =
   | {
       kind: "active";
       isResume: boolean;
-      selectedDatasourceId: string;
+      selectedDatasourceId?: string;
     };
 
 type ResolveRunIdentityInput = {
@@ -109,14 +109,16 @@ export const resolveRunIdentity = (input: ResolveRunIdentityInput): RunIdentityR
       sessionId,
       userId: input.userId
     });
-    input.metadataStore.dataSources.get({
-      user_id: input.userId,
-      datasource_id: selectedDatasourceId
-    });
+    if (selectedDatasourceId) {
+      input.metadataStore.dataSources.get({
+        user_id: input.userId,
+        datasource_id: selectedDatasourceId
+      });
+    }
     input.metadataStore.sessions.create({
       user_id: input.userId,
       id: sessionId,
-      selected_datasource_id: selectedDatasourceId
+      ...(selectedDatasourceId ? { selected_datasource_id: selectedDatasourceId } : {})
     });
     const claim = input.metadataStore.runs.claim({
       user_id: input.userId,
@@ -127,7 +129,7 @@ export const resolveRunIdentity = (input: ResolveRunIdentityInput): RunIdentityR
       user_input: input.userInput,
       status: "running",
       model_name: input.modelName,
-      datasource_id: selectedDatasourceId
+      ...(selectedDatasourceId ? { datasource_id: selectedDatasourceId } : {})
     });
     if (!claim.created) {
       throw new Error(`RUN_CLAIM_CONFLICT:${runId}`);
@@ -137,6 +139,6 @@ export const resolveRunIdentity = (input: ResolveRunIdentityInput): RunIdentityR
   return {
     kind: "active",
     isResume,
-    selectedDatasourceId
+    ...(selectedDatasourceId ? { selectedDatasourceId } : {})
   };
 };

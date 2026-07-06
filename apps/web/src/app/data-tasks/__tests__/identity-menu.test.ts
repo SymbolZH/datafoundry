@@ -59,7 +59,12 @@ describe("data task identity menu", () => {
   });
 
   it("exposes production password auth screens and account actions", () => {
-    const file = source();
+    // Auth screens moved to a standalone flow component behind /login routes;
+    // the identity provider only delegates to it.
+    const authFlow = readFileSync(
+      join(process.cwd(), "src/components/auth/auth-flow.tsx"),
+      "utf8",
+    );
 
     for (const label of [
       "Sign in",
@@ -67,7 +72,10 @@ describe("data task identity menu", () => {
       "Forgot password",
       "Verify email",
     ]) {
-      expect(file).toContain(label);
+      expect(authFlow).toContain(label);
     }
+
+    const file = source();
+    expect(file).toContain("PasswordAuthShell");
   });
 });

@@ -14,7 +14,7 @@ export type RunConfigDefaults = {
 };
 
 export type EffectiveRunConfig = {
-  activeDatasourceId: string;
+  activeDatasourceId?: string;
   activeLlmProfileId?: string;
   activeSkillId?: string;
   enabledDatasourceIds: string[];
@@ -75,9 +75,18 @@ export const extractEffectiveRunConfig = (
     runConfig,
     ["enabledDatasourceIds", "enabled_datasource_ids"]
   );
-  const activeDatasourceId = configuredDatasourceId ?? legacyDatasourceId ?? datasourceOverride?.[0]
-    ?? defaults?.activeDatasourceId ?? defaultDatasourceId;
-  const effectiveDatasourceIds = unique(datasourceOverride ?? defaults?.enabledDatasourceIds ?? [activeDatasourceId]);
+  const requestedActiveDatasourceId = configuredDatasourceId ?? legacyDatasourceId ?? datasourceOverride?.[0]
+    ?? defaults?.activeDatasourceId
+    ?? (datasourceOverride === undefined ? defaultDatasourceId : undefined);
+  const effectiveDatasourceIds = unique(
+    datasourceOverride ?? defaults?.enabledDatasourceIds
+      ?? (requestedActiveDatasourceId ? [requestedActiveDatasourceId] : [])
+  );
+  const activeDatasourceId = effectiveDatasourceIds.length === 0
+    ? undefined
+    : (requestedActiveDatasourceId && effectiveDatasourceIds.includes(requestedActiveDatasourceId)
+      ? requestedActiveDatasourceId
+      : effectiveDatasourceIds[0]);
   const activeLlmProfileId = stringFromAliases(runConfig, ["activeLlmProfileId", "active_llm_profile_id"])
     ?? defaults?.activeLlmProfileId;
   const skillOverride = stringArrayOptionFromAliases(runConfig, ["enabledSkillIds", "enabled_skill_ids"]);
@@ -113,7 +122,11 @@ export const extractEffectiveRunConfig = (
   const pinnedPaths = pinnedPathsFromAliases(runConfig, ["pinnedPaths", "pinned_paths"]);
   const evidenceRefs = evidenceRefsFromAliases(runConfig, ["evidenceRefs", "evidence_refs"]);
 
-  if (!effectiveDatasourceIds.includes(activeDatasourceId)) {
+  if (
+    activeDatasourceId
+    && effectiveDatasourceIds.length > 0
+    && !effectiveDatasourceIds.includes(activeDatasourceId)
+  ) {
     throw new Error("ACTIVE_DATASOURCE_NOT_ENABLED");
   }
   if (activeSkillId && !enabledSkillIds.includes(activeSkillId)) {
@@ -121,7 +134,7 @@ export const extractEffectiveRunConfig = (
   }
 
   return {
-    activeDatasourceId,
+    ...(activeDatasourceId ? { activeDatasourceId } : {}),
     ...(activeLlmProfileId ? { activeLlmProfileId } : {}),
     ...(activeSkillId ? { activeSkillId } : {}),
     enabledDatasourceIds: effectiveDatasourceIds,

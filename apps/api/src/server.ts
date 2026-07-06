@@ -40,6 +40,7 @@ import { Observable } from "rxjs";
 import { handleConfigApiRequest } from "./config-api.js";
 import { loadPasswordAuthConfig, type PasswordAuthConfig } from "./auth/config.js";
 import { AuthService, type AuthIdentity } from "./auth/service.js";
+import { serverDefaultConnectionStatus } from "./model-profile-connection-status.js";
 import {
   handleAuthApiRequest,
   isUnsafeMethod,
@@ -494,7 +495,7 @@ class DataFoundryAgUiAgent extends AbstractAgent {
           modelTemperature: modelSettings?.temperature,
           runId,
           runInput: normalizedRunInput,
-          selectedDatasourceId,
+          ...(selectedDatasourceId ? { selectedDatasourceId } : {}),
           sessionId,
           taskStateRuntime: this.input.taskStateRuntime,
           userId: this.input.user.id,
@@ -510,7 +511,7 @@ class DataFoundryAgUiAgent extends AbstractAgent {
           effectiveRunConfig,
           modelProvider,
           runId,
-          selectedDatasourceId,
+          ...(selectedDatasourceId ? { selectedDatasourceId } : {}),
           sessionId,
           userId: this.input.user.id,
           userInput,
@@ -1064,17 +1065,42 @@ const ensureBuiltinConfigResources = async (
   workspaceId: string
 ): Promise<void> => {
   const common = { workspace_id: workspaceId, user_id: userId };
-  if (!metadataStore.configResources.find({ ...common, kind: "model-profile", id: "server-default" })) {
+  const currentServerDefault = metadataStore.configResources.find({
+    ...common,
+    kind: "model-profile",
+    id: "server-default"
+  });
+  if (!currentServerDefault) {
     metadataStore.configResources.upsert({
       ...common,
       kind: "model-profile",
       id: "server-default",
-      name: "服务端默认",
+      name: "default",
       description: "Uses the server LLM environment variables.",
       payload: { provider: "server", modelName: "server", baseUrl: "server" },
       builtin: true,
-      status: "connected"
+      status: "untested"
     });
+  } else {
+    const nextStatus = serverDefaultConnectionStatus({
+      currentStatus: currentServerDefault.status,
+      storedFingerprint: stringRecordValue(currentServerDefault.payload, "llmEnvFingerprint"),
+      env: process.env
+    });
+    if (nextStatus !== currentServerDefault.status) {
+      metadataStore.configResources.upsert({
+        ...common,
+        kind: "model-profile",
+        id: "server-default",
+        name: currentServerDefault.name,
+        ...(currentServerDefault.description ? { description: currentServerDefault.description } : {}),
+        payload: currentServerDefault.payload,
+        default_enabled: currentServerDefault.default_enabled,
+        builtin: true,
+        status: nextStatus,
+        expected_revision: currentServerDefault.revision
+      });
+    }
   }
   for (const source of BUILTIN_SKILL_SOURCES) {
     const content = readFileSync(source.path);

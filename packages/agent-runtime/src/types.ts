@@ -17,8 +17,8 @@ export type AgentRunContext = {
   run_id: string;
   user_input: string;
   chat_mode: string;
-  selected_datasource_id: string;
-  enabled_datasource_ids: string[];
+  selected_datasource_id?: string;
+  enabled_datasource_ids?: string[];
   enabled_knowledge_ids?: string[];
   enabled_mcp_server_ids?: string[];
   requested_llm_profile_id?: string;

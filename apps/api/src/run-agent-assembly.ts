@@ -41,7 +41,7 @@ type CreateRunAgentContextInput = {
   effectiveRunConfig: EffectiveRunConfig;
   modelProvider: ResolvedRunConfig["modelProvider"];
   runId: string;
-  selectedDatasourceId: string;
+  selectedDatasourceId?: string;
   sessionId: string;
   userId: string;
   userInput: string;
@@ -83,8 +83,12 @@ export const createRunAgentContext = (input: CreateRunAgentContextInput): AgentR
     run_id: input.runId,
     user_input: input.userInput,
     chat_mode: "copilotkit",
-    selected_datasource_id: input.selectedDatasourceId,
-    enabled_datasource_ids: input.effectiveRunConfig.enabledDatasourceIds,
+    ...(input.effectiveRunConfig.enabledDatasourceIds.length > 0
+      ? {
+          enabled_datasource_ids: input.effectiveRunConfig.enabledDatasourceIds,
+          ...(input.selectedDatasourceId ? { selected_datasource_id: input.selectedDatasourceId } : {})
+        }
+      : {}),
     ...(input.effectiveRunConfig.activeLlmProfileId
       ? { requested_llm_profile_id: input.effectiveRunConfig.activeLlmProfileId }
       : {}),

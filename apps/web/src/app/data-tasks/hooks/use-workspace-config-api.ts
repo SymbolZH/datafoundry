@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   applyBackendCapabilities,
   configApi,
@@ -18,10 +18,13 @@ import {
   setLiveDatasourceTypes,
   setLiveMentionSupport,
   setLivePendingCapabilities,
+  type ConfigItemStatus,
   type WorkspaceConfigItem,
   type WorkspaceConfigKind,
   type WorkspaceConfigStore,
 } from "../data-task-state";
+
+const AUTO_TEST_KINDS: WorkspaceConfigKind[] = ["db", "llm", "kb", "mcp", "skill"];
 
 export type WorkspaceApiState = {
   workspaceConfig: WorkspaceConfigStore;
@@ -144,6 +147,65 @@ export function useWorkspaceConfigApi(): WorkspaceApiState & WorkspaceApiActions
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  const setItemStatus = useCallback(
+    (kind: WorkspaceConfigKind, itemId: string, status: ConfigItemStatus) => {
+      setWorkspaceConfig((current) => ({
+        ...current,
+        [kind]: current[kind].map((entry) =>
+          entry.id === itemId ? { ...entry, status } : entry,
+        ),
+      }));
+    },
+    [],
+  );
+
+  const runItemTest = useCallback(
+    async (kind: WorkspaceConfigKind, itemId: string): Promise<void> => {
+      if (kind === "db") await configApi.testDatasource(itemId);
+      else if (kind === "kb") await configApi.testKnowledgeBase(itemId);
+      else if (kind === "mcp") await configApi.testMcpServer(itemId);
+      else if (kind === "llm") await configApi.testModelProfile(itemId);
+      else await configApi.testSkill(itemId);
+    },
+    [],
+  );
+
+  // Auto-run connectivity tests for any untested config on load so that
+  // `failed`/`untested` items surface as unusable in the UI without manual
+  // action. Each item is probed once per session; the backend persists the
+  // resulting status, so a later refresh will no longer report it as untested.
+  const autoTestedRef = useRef<Set<string>>(new Set());
+  const autoTestingRef = useRef(false);
+
+  useEffect(() => {
+    if (loading || autoTestingRef.current) return;
+
+    const pending: Array<{ kind: WorkspaceConfigKind; id: string; key: string }> = [];
+    for (const kind of AUTO_TEST_KINDS) {
+      for (const item of workspaceConfig[kind]) {
+        const key = `${kind}:${item.id}`;
+        if (item.status === "untested" && !autoTestedRef.current.has(key)) {
+          pending.push({ kind, id: item.id, key });
+        }
+      }
+    }
+    if (pending.length === 0) return;
+
+    for (const entry of pending) autoTestedRef.current.add(entry.key);
+    autoTestingRef.current = true;
+    void (async () => {
+      for (const entry of pending) {
+        try {
+          await runItemTest(entry.kind, entry.id);
+          setItemStatus(entry.kind, entry.id, "connected");
+        } catch {
+          setItemStatus(entry.kind, entry.id, "failed");
+        }
+      }
+      autoTestingRef.current = false;
+    })();
+  }, [loading, workspaceConfig, runItemTest, setItemStatus]);
 
   const replaceItemInStore = useCallback(
     (kind: WorkspaceConfigKind, item: WorkspaceConfigItem) => {

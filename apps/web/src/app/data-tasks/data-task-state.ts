@@ -764,6 +764,35 @@ export interface WorkspaceConfigItem {
   status?: ConfigItemStatus;
 }
 
+export function workspaceConfigItemStatusBadge(
+  item: WorkspaceConfigItem,
+): { label: string; className: string } | null {
+  if (item.status === "connected") {
+    return { label: "Connected", className: "bg-emerald-50 text-emerald-700" };
+  }
+  if (item.status === "failed") {
+    return { label: "Failed", className: "bg-rose-50 text-rose-700" };
+  }
+  return { label: "Not tested", className: "bg-slate-100 text-slate-400" };
+}
+
+/**
+ * A configuration is only usable once it has passed a connectivity `test`.
+ * `failed` and `untested` items must not be selectable/used anywhere.
+ */
+export function isConfigItemUsable(
+  item: Pick<WorkspaceConfigItem, "status"> | null | undefined,
+): boolean {
+  return item?.status === "connected";
+}
+
+/** Short status word for compact rows/pickers (mirrors the badge labels). */
+export function configItemStatusLabel(status: ConfigItemStatus | undefined): string {
+  if (status === "connected") return "Connected";
+  if (status === "failed") return "Unavailable";
+  return "Not tested";
+}
+
 export type ConfigFieldDef = {
   key: string;
   label: string;
@@ -2466,7 +2495,7 @@ export type RunConfigPayload = {
   enabledKnowledgeIds: string[];
   enabledMcpServerIds: string[];
   enabledSkillIds: string[];
-  activeDatasourceId: string;
+  activeDatasourceId?: string;
   activeLlmProfileId: string | null;
   activeSkillId: string;
   mentioned: PerRunSelection;
@@ -2524,11 +2553,12 @@ export function buildRunConfig(
     skill: filterMentionedIds(selection.skill, enabledSkillSet),
   };
 
-  const activeDatasourceId =
-    mentioned.db[0] ??
-    (enabledDbSet.has(options.defaultDatasourceId)
-      ? options.defaultDatasourceId
-      : (enabledDb[0] ?? options.defaultDatasourceId));
+  const activeDatasourceId = mentioned.db[0]
+    ?? (enabledDb.length > 0
+      ? (enabledDbSet.has(options.defaultDatasourceId)
+        ? options.defaultDatasourceId
+        : enabledDb[0])
+      : undefined);
 
   const activeSkillId =
     mentioned.skill[0] ??
@@ -2541,7 +2571,7 @@ export function buildRunConfig(
     enabledKnowledgeIds: enabledKb,
     enabledMcpServerIds: enabledMcp,
     enabledSkillIds: enabledSkill,
-    activeDatasourceId,
+    ...(activeDatasourceId ? { activeDatasourceId } : {}),
     activeLlmProfileId: options.activeLlmId,
     activeSkillId,
     mentioned,
@@ -2552,17 +2582,17 @@ export function buildRunConfig(
 }
 
 export type RunForwardedProps = {
-  datasourceId: string;
+  datasourceId?: string;
   run_config: RunConfigPayload;
 };
 
 /** CopilotKit `forwardedProps` payload for each agent run (highest backend merge priority). */
 export function buildRunForwardedProps(
-  datasourceId: string,
+  datasourceId: string | undefined,
   runConfig: RunConfigPayload,
 ): RunForwardedProps {
   return {
-    datasourceId,
+    ...(datasourceId ? { datasourceId } : {}),
     run_config: runConfig,
   };
 }
@@ -2590,7 +2620,7 @@ export function buildAgentRunStatePatch(
   const { errorMessage: _errorMessage, runStatus: _runStatus, ...rest } = prev;
   return {
     ...rest,
-    datasourceId: forwardedProps.datasourceId,
+    ...(forwardedProps.datasourceId ? { datasourceId: forwardedProps.datasourceId } : {}),
     run_config: forwardedProps.run_config,
   };
 }
@@ -2616,11 +2646,35 @@ export function resolveActiveDatasourceId(
   session: ChatSession | null | undefined,
   selection: PerRunSelection,
   fallback: string,
-): string {
+): string | undefined {
   const enabled = sessionEnabledIds(store, "db", session);
   const enabledSet = new Set(enabled);
   const mentioned = selection.db.find((id) => enabledSet.has(id));
   if (mentioned) return mentioned;
+  if (enabled.length === 0) return undefined;
   if (enabledSet.has(fallback)) return fallback;
-  return enabled[0] ?? fallback;
+  return enabled[0];
+}
+
+/**
+ * Returns a human-readable reason when a run must be blocked because the active
+ * model (or the active datasource, when one is selected) has not passed a
+ * connectivity test. Returns `null` when the run may proceed.
+ */
+export function resolveSendBlockReason(
+  store: WorkspaceConfigStore,
+  activeLlmId: string | null,
+  activeDatasourceId: string | undefined,
+): string | null {
+  const llm = store.llm.find((item) => item.id === activeLlmId) ?? store.llm[0] ?? null;
+  if (llm && !isConfigItemUsable(llm)) {
+    return `Model "${llm.name}" has not passed a connection test. Open the model configuration and run "Test connection" before using it.`;
+  }
+  if (activeDatasourceId) {
+    const db = store.db.find((item) => item.id === activeDatasourceId);
+    if (db && !isConfigItemUsable(db)) {
+      return `Data source "${db.name}" has not passed a connection test. Open the data source configuration and run "Test connection" before using it.`;
+    }
+  }
+  return null;
 }

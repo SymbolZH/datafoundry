@@ -69,6 +69,12 @@ import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 
 export type { AgentRunContext, AgentRunContextInput, AgUiEventEmitter } from "./types.js";
+export const DATA_AGENT_TOOL_NAMES = [
+  "inspect_schema",
+  "list_data_sources",
+  "preview_table",
+  "run_sql_readonly"
+] as const;
 export const STATIC_AGENT_TOOL_NAMES = [
   "ask_user",
   "edit_file",
@@ -418,8 +424,9 @@ export const createDataFoundry = async (
   });
   const skillTools = runWorkspace.workspace.skills ? createSkillTools(runWorkspace.workspace.skills) : {};
   runWorkspace.workspace.setToolsConfig({ enabled: false });
+  const dataToolsEnabled = (input.runContext.enabled_datasource_ids?.length ?? 0) > 0;
   const availableTools = {
-    ...registry.mastraTools,
+    ...(dataToolsEnabled ? registry.mastraTools : {}),
     ...artifactTools,
     ...fileAssetTools,
     ...knowledgeTools,
@@ -506,10 +513,13 @@ export const createDataFoundry = async (
 };
 
 export const createDataFoundryRunContext = (input: AgentRunContextInput): AgentRunContext => {
+  if ((input.enabled_datasource_ids?.length ?? 0) === 0) {
+    return input;
+  }
   if (!input.selected_datasource_id) {
     throw new Error("DATASOURCE_REQUIRED");
   }
-  if (!input.enabled_datasource_ids.includes(input.selected_datasource_id)) {
+  if (!(input.enabled_datasource_ids ?? []).includes(input.selected_datasource_id)) {
     throw new Error("ACTIVE_DATASOURCE_NOT_ENABLED");
   }
 
@@ -791,15 +801,18 @@ const buildAgentInstructions = (input: AgentInstructionsInput): string => {
   const selectedSkillSummary = input.selectedSkills.length > 0
     ? input.selectedSkills.map((skill) => `${skill.name} (${skill.id}): ${skill.description}`).join("\n")
     : "None";
+  const datasourcePolicy = (context.enabled_datasource_ids ?? []).length > 0
+    ? `Datasources available this run: [${(context.enabled_datasource_ids ?? []).join(", ")}]
+Default datasource: "${context.selected_datasource_id ?? ""}".
+You may query any datasource in the list above by passing its id to a data tool's datasource_id argument.
+Never reference a datasource id outside this list; the tool rejects it with DATASOURCE_NOT_SELECTED.`
+    : `No datasources are enabled this run. Answer general questions directly. Do not call data tools unless the user enables a datasource.`;
 
   return `
 You are a general-purpose data agent. Analyze data by calling tools. Never invent schema, rows, SQL results,
 file contents, or command output.
 
-Datasources available this run: [${(context.enabled_datasource_ids ?? []).join(", ")}]
-Default datasource: "${context.selected_datasource_id}".
-You may query any datasource in the list above by passing its id to a data tool's datasource_id argument.
-Never reference a datasource id outside this list; the tool rejects it with DATASOURCE_NOT_SELECTED.
+${datasourcePolicy}
 Selected skills to prioritize this run:
 ${selectedSkillSummary}
 
