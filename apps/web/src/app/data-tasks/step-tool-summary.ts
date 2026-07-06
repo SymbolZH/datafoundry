@@ -1,4 +1,47 @@
+import { toolDisplayTitle } from "./data-task-state";
+import type { LiveRun } from "./live-run-state";
+
 export type StepToolStatus = "running" | "success" | "failed";
+
+type AssistantToolCallLike = {
+  id?: string;
+  function?: { name?: string };
+};
+
+function toolSummaryStatus(callStatus?: LiveRun["toolCalls"][number]["status"]): StepToolStatus {
+  if (callStatus === "failed") return "failed";
+  if (callStatus === "running") return "running";
+  return "success";
+}
+
+export function buildStepToolSummaries(input: {
+  toolCalls: AssistantToolCallLike[];
+  liveRun: LiveRun | null;
+  isActive: boolean;
+}): StepToolSummaryInput[] {
+  const liveById = new Map(input.liveRun?.toolCalls.map((call) => [call.id, call]) ?? []);
+  return input.toolCalls
+    .map((call, index) => {
+      const id = typeof call.id === "string" && call.id ? call.id : `tool-${index}`;
+      const liveCall = liveById.get(id);
+      const status = liveCall
+        ? toolSummaryStatus(liveCall.status)
+        : input.isActive
+          ? "running"
+          : "success";
+      return {
+        id,
+        label: toolDisplayTitle(call.function?.name ?? liveCall?.name),
+        status,
+        durationLabel: liveCall
+          ? stepElapsedLabel(liveCall)
+          : status === "running"
+            ? "Running"
+            : "—",
+      };
+    })
+    .filter((tool) => tool.label.trim().length > 0);
+}
 
 export type StepToolSummaryInput = {
   id: string;

@@ -1,8 +1,16 @@
 "use client";
 
-import type { ReactNode } from "react";
+import React, { type ReactNode } from "react";
 
+import { resolveToolFailurePresentation } from "./tool-call-display";
 import { normalizeTableRows, normalizeSqlTable } from "./table-rows";
+import {
+  parseSchemaToolResult,
+  parseSqlToolResult,
+  parseToolResultRecord,
+  toolResultObservationText,
+  unwrapToolResultPayload,
+} from "./tool-result-normalize";
 import {
   codeBlockClass,
   dataTableCellClass,
@@ -196,25 +204,15 @@ export type ToolResultVariant = "chat" | "console";
 type MetaChip = { label: string; value: string };
 
 function parseResultRecord(value: unknown): Record<string, unknown> | null {
-  if (value && typeof value === "object" && !Array.isArray(value)) {
-    return value as Record<string, unknown>;
-  }
-  if (typeof value !== "string") return null;
-  try {
-    const parsed = JSON.parse(value);
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : null;
-  } catch {
-    return null;
-  }
+  return parseToolResultRecord(value);
 }
 
 function observationText(value: unknown): string {
-  const record = parseResultRecord(value);
+  const normalized = unwrapToolResultPayload(value);
+  if (typeof normalized === "string") return normalized;
+  const record = parseResultRecord(normalized);
   if (record && typeof record.observation === "string") return record.observation;
-  if (typeof value === "string") return value;
-  return formatPayload(value);
+  return toolResultObservationText(value);
 }
 
 export function formatPayload(value: unknown): string {
@@ -413,6 +411,72 @@ function renderListDataSources(record: Record<string, unknown>, variant: ToolRes
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function renderSqlResult(result: unknown, variant: ToolResultVariant): ReactNode | null {
+  const parsed = parseSqlToolResult(result);
+  if (!parsed || parsed.columns.length === 0) return null;
+
+  const { columns: displayColumns, rows } = normalizeSqlTable(parsed.columns, parsed.rows);
+  const metaItems = [
+    {
+      label: "Rows",
+      value: String(parsed.row_count ?? parsed.rows.length),
+    },
+    ...(parsed.elapsed_ms !== undefined
+      ? [{ label: "Duration", value: `${parsed.elapsed_ms}ms` }]
+      : []),
+    ...(parsed.audit_log_id ? [{ label: "Audit", value: parsed.audit_log_id }] : []),
+    ...(parsed.artifact_id ? [{ label: "Output", value: parsed.artifact_id }] : []),
+  ];
+
+  if (rows.length === 0) {
+    return (
+      <div className="grid gap-2">
+        <MetaChips items={metaItems} />
+        <p className="rounded-lg border border-dashed border-border bg-surface-subtle px-2.5 py-2 text-xs text-muted-light">
+          The query returned no rows.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-2">
+      <MetaChips items={metaItems} />
+      <ResultDataTable columns={displayColumns} rows={rows} variant={variant} />
+    </div>
+  );
+}
+
+function renderSchemaResult(result: unknown): ReactNode | null {
+  const parsed = parseSchemaToolResult(result);
+  if (!parsed?.tables?.length) return null;
+
+  return (
+    <div className="grid gap-2">
+      {parsed.datasource_id ? (
+        <MetaChips items={[{ label: "Datasource", value: parsed.datasource_id }]} />
+      ) : null}
+      {parsed.tables.map((table) => (
+        <div key={table.name} className="rounded-lg border border-border bg-surface/80 p-2.5">
+          <div className="font-mono text-xs font-semibold text-foreground">{table.name}</div>
+          <div className="mt-1.5 flex flex-wrap gap-1">
+            {(table.columns ?? []).map((column) => (
+              <span
+                key={column.name}
+                className="rounded border border-border bg-surface px-1.5 py-0.5 font-mono text-[10px] text-muted"
+                title={column.type}
+              >
+                {column.name}
+                {column.type ? <span className="text-muted-light"> · {column.type}</span> : null}
+              </span>
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -647,6 +711,14 @@ export function renderFormattedToolResult(
     return renderPreviewTable(record, variant);
   }
 
+  if (toolName === "run_sql_readonly") {
+    return renderSqlResult(result, variant);
+  }
+
+  if (toolName === "inspect_schema") {
+    return renderSchemaResult(result);
+  }
+
   if (
     (toolName === "task_write" ||
       toolName === "task_update" ||
@@ -682,6 +754,25 @@ export function renderFormattedToolResult(
   }
 
   return null;
+}
+
+export function ToolFailureResult({
+  toolName,
+  result,
+}: {
+  toolName: string;
+  result?: string;
+}) {
+  const failure = resolveToolFailurePresentation(result);
+  return (
+    <div className="rounded-xl border border-step-error/25 bg-step-error/8 p-3 text-xs leading-5 text-step-error">
+      <div className="font-semibold text-step-error">{failure.title}</div>
+      <p className="mt-1">
+        <span className="font-mono">{toolName}</span>: {failure.message}
+      </p>
+      {failure.hint ? <p className="mt-2 text-[11px] text-step-error/90">{failure.hint}</p> : null}
+    </div>
+  );
 }
 
 export function ToolRawFallback({

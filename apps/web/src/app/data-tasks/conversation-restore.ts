@@ -25,8 +25,11 @@ import {
   reconcileLiveRunArtifacts,
   reduceLiveRunEvent,
   type LiveRun,
+  type LiveWorkspaceMetadata,
+  type LiveSandboxOutput,
   type SessionUsageStats,
 } from "./live-run-state";
+import { parseToolResultRecord, toolResultObservationText } from "./tool-result-normalize";
 
 /** Pending HITL interaction restored from server conversation metadata. */
 export type RestoredPendingInteraction = {
@@ -336,6 +339,15 @@ const RUN_SCOPED_RESTORABLE_CUSTOM_EVENTS = new Set([
   "skill.selection",
   "token_usage",
   "token_usage.correlation",
+  "workspace.metadata",
+  "sandbox.output",
+]);
+
+const WORKSPACE_SIGNAL_TOOL_NAMES = new Set([
+  "write_file",
+  "edit_file",
+  "mkdir",
+  "execute_command",
 ]);
 
 type ChoiceOption = { label: string; value: string; description?: string };
@@ -1318,6 +1330,111 @@ function startNextHydratedRunGroup(state: LiveRun, runId?: string): LiveRun {
   return reduceLiveRunEvent(state, { type: "RUN_STARTED", ...(runId ? { runId } : {}) });
 }
 
+function dtoWithRestorableEventsForRun(
+  dto: SessionConversationDto,
+  runId: string,
+): SessionConversationDto {
+  return {
+    ...dto,
+    restorableCustomEvents: (dto.restorableCustomEvents ?? []).filter(
+      (event) => event.runId === runId,
+    ),
+  };
+}
+
+function workspacePathFromToolResult(toolName: string, result: string): string | undefined {
+  const text = result.trim();
+  if (!text) return undefined;
+  if (toolName === "write_file") {
+    const match = text.match(/\bto ([^\n]+)$/);
+    return match?.[1]?.trim();
+  }
+  if (toolName === "edit_file") {
+    const match = text.match(/\bin ([^\n(]+)/);
+    return match?.[1]?.trim();
+  }
+  if (toolName === "mkdir") {
+    const match = text.match(/(?:directory|dir) ([^\n]+)$/i);
+    return match?.[1]?.trim();
+  }
+  const record = parseToolResultRecord(result);
+  return typeof record?.path === "string" ? record.path : undefined;
+}
+
+function sandboxOutputKey(value: unknown): string | undefined {
+  const record = parseRecord(value);
+  const kind = typeof record?.kind === "string" ? record.kind : "stdout";
+  const text =
+    typeof record?.text === "string"
+      ? record.text.trim()
+      : typeof record?.output === "string"
+        ? record.output.trim()
+        : typeof record?.value === "string"
+          ? record.value.trim()
+          : undefined;
+  if (!text) return undefined;
+  return `${kind}:${text}`;
+}
+
+/** Synthesize workspace CUSTOM signals when restore lacks persisted CUSTOM events. */
+function deriveWorkspaceSignalsFromToolCalls(state: LiveRun): LiveRun {
+  const knownMetadataIds = new Set(
+    state.workspaceMetadata.map((entry) => entry.toolCallId).filter(Boolean),
+  );
+  const workspaceMetadata: LiveWorkspaceMetadata[] = [...state.workspaceMetadata];
+  const sandboxOutputs: LiveSandboxOutput[] = [...state.sandboxOutputs];
+  const knownSandboxOutputKeys = new Set(
+    sandboxOutputs
+      .map((output) => sandboxOutputKey(output.payload))
+      .filter((key): key is string => Boolean(key)),
+  );
+
+  for (const toolCall of state.toolCalls) {
+    if (toolCall.status !== "success" || !toolCall.result) continue;
+
+    if (
+      WORKSPACE_SIGNAL_TOOL_NAMES.has(toolCall.name) &&
+      toolCall.name !== "execute_command" &&
+      !knownMetadataIds.has(toolCall.id)
+    ) {
+      const path = workspacePathFromToolResult(toolCall.name, toolCall.result);
+      workspaceMetadata.push({
+        toolCallId: toolCall.id,
+        toolName: toolCall.name,
+        receivedAt: toolCall.finishedAtMs ?? toolCall.startedAtMs ?? Date.now(),
+        payload: {
+          status: "ready",
+          ...(path ? { path } : {}),
+          operation: toolCall.name,
+        },
+      });
+      knownMetadataIds.add(toolCall.id);
+    }
+
+    if (toolCall.name === "execute_command") {
+      const text = toolResultObservationText(toolCall.result).trim();
+      const key = text ? `stdout:${text}` : undefined;
+      if (text && key && !knownSandboxOutputKeys.has(key)) {
+        sandboxOutputs.push({
+          kind: "stdout",
+          receivedAt: toolCall.finishedAtMs ?? toolCall.startedAtMs ?? Date.now(),
+          payload: { kind: "stdout", text },
+        });
+        knownSandboxOutputKeys.add(key);
+      }
+    }
+  }
+
+  if (
+    workspaceMetadata.length === state.workspaceMetadata.length &&
+    sandboxOutputs.length === state.sandboxOutputs.length
+  ) {
+    return state;
+  }
+
+  return { ...state, workspaceMetadata, sandboxOutputs };
+}
+
 function mergePreservedLiveRunSessionData(previous: LiveRun, hydrated: LiveRun): LiveRun {
   const artifactIds = new Set(hydrated.artifacts.map((artifact) => artifact.id));
   const eventIds = new Set(hydrated.events.map((event) => event.id));
@@ -1365,6 +1482,8 @@ export function hydrateLiveRunFromConversation(
       next = applyConversationToolCall(next, toolCall);
     }
 
+    next = replayRestorableCustomEvents(next, dtoWithRestorableEventsForRun(dto, segment.runId));
+
     next =
       segment.tools.length > 0
         ? finalizeHydratedRunSegment(next, segment.tools)
@@ -1372,8 +1491,7 @@ export function hydrateLiveRunFromConversation(
   }
 
   next = reconcileLiveRunArtifacts(mergePreservedLiveRunSessionData(state, next));
-  next = replayRestorableCustomEvents(next, dto);
-  return next;
+  return deriveWorkspaceSignalsFromToolCalls(next);
 }
 
 /**

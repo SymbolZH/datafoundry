@@ -8,6 +8,7 @@ import type {
 } from "./data-task-state";
 import { dataStepKindForTool, emptyStepPayload, toolDisplayTitle } from "./data-task-state";
 import { formatRunErrorMessage } from "./run-error-message";
+import { parseToolResultRecord } from "./tool-result-normalize";
 
 export type LiveTaskStatus = "pending" | "running" | "completed" | "failed";
 
@@ -680,8 +681,12 @@ function reduceToolEvent(state: LiveRun, event: AgUiLikeEvent): LiveRun {
       ? dataStepKindForTool(effectiveToolName)
       : existingEvent?.kind ?? dataStepKindForTool(effectiveToolName);
   const args = recordValue(event.args) ?? recordValue(event.parameters);
-  const sql = stringValue(args?.sql) ?? stringValue(event.delta) ?? "";
   const result = resultPayload;
+  const sql =
+    stringValue(args?.sql) ??
+    stringValue(event.delta) ??
+    stringValue(parseResultObject(result)?.sql) ??
+    "";
 
   if (kind === "query") {
     const existing = nextState.events.find((item) => item.id === id);
@@ -772,13 +777,7 @@ function summarizeGenericResult(result: string, eventType?: string): string {
 }
 
 function parseResultObject(result: string): Record<string, unknown> | null {
-  if (!result) return null;
-  try {
-    const parsed = JSON.parse(result);
-    return recordValue(parsed);
-  } catch {
-    return null;
-  }
+  return parseToolResultRecord(result);
 }
 
 function toolResultPayloadLooksFailed(parsed: Record<string, unknown> | null): boolean {

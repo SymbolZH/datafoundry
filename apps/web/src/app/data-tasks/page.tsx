@@ -164,7 +164,6 @@ import {
   toolDisplayStatusLabel,
   toolPendingHint,
   toolResultLooksLikeError,
-  resolveToolFailurePresentation,
   type CopilotToolStatus,
   type ToolDisplayStatus,
 } from "./tool-call-display";
@@ -187,14 +186,15 @@ import {
 } from "./process-tool-groups";
 import {
   buildCollapsedStepSummary,
+  buildStepToolSummaries,
   buildToolChipSummaries,
   stepElapsedLabel,
   type StepToolStatus,
   type StepToolSummaryInput,
   type ToolChipSummary,
 } from "./step-tool-summary";
-import { ToolFormattedParams, ToolFormattedResult } from "./tool-result-format";
-import { normalizeSqlTable } from "./table-rows";
+import { ToolFormattedParams, ToolFailureResult, ToolFormattedResult } from "./tool-result-format";
+import { parseSchemaToolResult } from "./tool-result-normalize";
 import {
   chatPaneClassName,
   getWorkspaceGridTemplateColumns,
@@ -2108,121 +2108,9 @@ function ToolResultMissingCard({ name }: { name: string }) {
   );
 }
 
-function ToolResultFailedCard({
-  name,
-  title,
-  message,
-  hint,
-}: {
-  name: string;
-  title: string;
-  message: string;
-  hint?: string;
-}) {
-  return (
-    <div className="rounded-xl border border-step-error/25 bg-step-error/8 p-3 text-xs leading-5 text-step-error">
-      <div className="font-semibold text-step-error">{title}</div>
-      <p className="mt-1">
-        <span className="font-mono">{name}</span>：{message}
-      </p>
-      {hint ? <p className="mt-2 text-[11px] text-step-error/90">{hint}</p> : null}
-    </div>
-  );
-}
-
 function renderToolFailureCard(name: string, result?: string) {
-  const failure = resolveToolFailurePresentation(result);
-  return (
-    <ToolResultFailedCard
-      name={name}
-      title={failure.title}
-      message={failure.message}
-      hint={failure.hint}
-    />
-  );
+  return <ToolFailureResult toolName={name} result={result} />;
 }
-
-function ResultMetaChips({
-  items,
-}: {
-  items: Array<{ label: string; value: string }>;
-}) {
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      {items.map((item) => (
-        <span
-          key={item.label}
-          className="inline-flex items-center gap-1 rounded-full border border-border bg-surface-subtle px-2 py-0.5 text-[11px]"
-          title={`${item.label}: ${item.value}`}
-        >
-          <span className="font-semibold text-muted-light">{item.label}</span>
-          <span className="max-w-[160px] truncate font-mono text-muted">
-            {item.value}
-          </span>
-        </span>
-      ))}
-    </div>
-  );
-}
-
-function DataTable({
-  columns,
-  rows,
-}: {
-  columns: string[];
-  rows: unknown[];
-}) {
-  const { columns: displayColumns, rows: normalizedRows } = normalizeSqlTable(columns, rows);
-  const previewRows = normalizedRows.slice(0, 50);
-  return (
-    <div className="overflow-auto rounded-lg border border-border">
-      <table className="w-full text-left text-[11px]">
-        <thead className="bg-surface-subtle text-muted-light">
-          <tr>
-            {displayColumns.map((column) => (
-              <th key={column} className="whitespace-nowrap px-2 py-1.5 font-semibold">
-                {column}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {previewRows.map((row, rowIndex) => (
-            <tr key={rowIndex} className="border-t border-border">
-              {displayColumns.map((_, cellIndex) => (
-                <td
-                  key={cellIndex}
-                  className={[
-                    "whitespace-nowrap px-2 py-1.5",
-                    cellIndex === 0
-                      ? "font-medium text-foreground"
-                      : "text-muted",
-                  ].join(" ")}
-                >
-                  {formatCell(row[cellIndex])}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {normalizedRows.length > previewRows.length && (
-        <div className="border-t border-border bg-surface-subtle px-2 py-1 text-[10px] text-muted-light">
-          Previewing the first {previewRows.length} rows out of {normalizedRows.length} rows.
-        </div>
-      )}
-    </div>
-  );
-}
-
-type SqlResult = {
-  columns: string[];
-  rows: unknown[];
-  row_count?: number;
-  audit_log_id?: string;
-  elapsed_ms?: number;
-  artifact_id?: string;
-};
 
 function SqlToolCard({
   toolCallId,
@@ -2241,7 +2129,6 @@ function SqlToolCard({
 }) {
   const displayStatus = useResolvedToolDisplayStatus(toolCallId, status, result);
   const effectiveResult = useEffectiveToolResult(toolCallId, result);
-  const parsed = parseJson<SqlResult>(effectiveResult);
   const hasResult = !!effectiveResult;
   const resultIsError = toolResultLooksLikeError(effectiveResult);
 
@@ -2251,7 +2138,7 @@ function SqlToolCard({
       onSelectToolAction={onSelectToolAction}
     >
       <ToolInvocationCard name={name} displayStatus={displayStatus}>
-        {parameters?.sql ? (
+        {parameters !== undefined ? (
           <ToolFormattedParams toolName={name} parameters={parameters} />
         ) : null}
         {!hasResult && displayStatus !== "complete" && displayStatus !== "failed" && (
@@ -2260,32 +2147,12 @@ function SqlToolCard({
       </ToolInvocationCard>
       {hasResult && !resultIsError ? (
         <ToolResultCard name={name}>
-          {parsed && Array.isArray(parsed.columns) && Array.isArray(parsed.rows) ? (
-            <>
-              <ResultMetaChips
-                items={[
-                  {
-                    label: "Rows",
-                    value: String(parsed.row_count ?? parsed.rows.length),
-                  },
-                  ...(parsed.elapsed_ms !== undefined
-                    ? [{ label: "Duration", value: `${parsed.elapsed_ms}ms` }]
-                    : []),
-                  ...(parsed.audit_log_id
-                    ? [{ label: "Audit", value: parsed.audit_log_id }]
-                    : []),
-                  ...(parsed.artifact_id
-                    ? [{ label: "Output", value: parsed.artifact_id }]
-                    : []),
-                ]}
-              />
-              <div className="mt-2">
-                <DataTable columns={parsed.columns} rows={parsed.rows} />
-              </div>
-            </>
-          ) : (
-            <ToolPayloadBlock title="Raw result" value={effectiveResult} tone="light" />
-          )}
+          <ToolFormattedResult
+            toolName={name}
+            result={effectiveResult}
+            variant="chat"
+            showRawFallback={false}
+          />
         </ToolResultCard>
       ) : displayStatus === "failed" || resultIsError ? (
         renderToolFailureCard(name, effectiveResult)
@@ -2319,7 +2186,7 @@ function SchemaToolCard({
 }) {
   const displayStatus = useResolvedToolDisplayStatus(toolCallId, status, result);
   const effectiveResult = useEffectiveToolResult(toolCallId, result);
-  const parsed = parseJson<SchemaResult>(effectiveResult);
+  const parsed = parseSchemaToolResult(effectiveResult) as SchemaResult | null;
   const hasResult = !!effectiveResult;
   const resultIsError = toolResultLooksLikeError(effectiveResult);
 
@@ -2474,37 +2341,6 @@ type AssistantToolCallLike = {
   id?: string;
   function?: { name?: string };
 };
-
-function toolSummaryStatus(callStatus?: LiveRun["toolCalls"][number]["status"]): StepToolStatus {
-  if (callStatus === "failed") return "failed";
-  if (callStatus === "running") return "running";
-  return "success";
-}
-
-function buildStepToolSummaries(input: {
-  toolCalls: AssistantToolCallLike[];
-  liveRun: LiveRun | null;
-  isActive: boolean;
-}): StepToolSummaryInput[] {
-  const liveById = new Map(input.liveRun?.toolCalls.map((call) => [call.id, call]) ?? []);
-  return input.toolCalls
-    .map((call, index) => {
-      const id = typeof call.id === "string" && call.id ? call.id : `tool-${index}`;
-      const liveCall = liveById.get(id);
-      const status = liveCall ? toolSummaryStatus(liveCall.status) : input.isActive ? "running" : "success";
-      return {
-        id,
-        label: toolDisplayTitle(call.function?.name ?? liveCall?.name),
-        status,
-        durationLabel: liveCall
-          ? stepElapsedLabel(liveCall)
-          : status === "running"
-            ? "Running"
-            : "—",
-      };
-    })
-    .filter((tool) => tool.label.trim().length > 0);
-}
 
 function buildStepElapsedInput(input: {
   toolCalls: AssistantToolCallLike[];
@@ -6548,18 +6384,6 @@ function parseJson<T>(value: unknown): T | null {
   } catch {
     return null;
   }
-}
-
-function formatCell(value: unknown): string {
-  if (value === null || value === undefined) return "—";
-  if (typeof value === "object") {
-    try {
-      return JSON.stringify(value);
-    } catch {
-      return String(value);
-    }
-  }
-  return String(value);
 }
 
 function RunStatusPill({
