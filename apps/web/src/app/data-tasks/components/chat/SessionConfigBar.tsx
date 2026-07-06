@@ -14,11 +14,14 @@ import { createPortal } from "react-dom";
 import {
   PER_RUN_MENTION_APPEARANCE,
   SESSION_RESOURCE_LABEL,
+  configItemStatusLabel,
+  isConfigItemUsable,
   isSessionResourceKindLocked,
   sessionResourceCounts,
 } from "../../data-task-state";
 import type {
   ChatSession,
+  ConfigItemStatus,
   PerRunMentionKind,
   SessionStartedHints,
   WorkspaceConfigItem,
@@ -404,12 +407,21 @@ function AgentToolsSection({
             const enabled = !new Set(session?.config?.disabled[kind] ?? []).has(
               item.id,
             );
+            const usable = isConfigItemUsable(item);
             return (
               <li key={item.id}>
-                <div className="flex items-start gap-3 px-3 py-2 transition hover:bg-surface-subtle">
+                <div
+                  className={[
+                    "flex items-start gap-3 px-3 py-2 transition",
+                    usable ? "hover:bg-surface-subtle" : "opacity-60",
+                  ].join(" ")}
+                >
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium text-foreground">
-                      {item.name}
+                    <span className="flex items-center gap-1.5">
+                      <span className="min-w-0 truncate text-sm font-medium text-foreground">
+                        {item.name}
+                      </span>
+                      {usable ? null : <ConfigStatusChip status={item.status} />}
                     </span>
                     {item.description && (
                       <span className="mt-0.5 block truncate text-xs text-muted-light">
@@ -418,7 +430,8 @@ function AgentToolsSection({
                     )}
                   </span>
                   <Switch
-                    checked={enabled}
+                    checked={enabled && usable}
+                    disabled={!usable}
                     onChange={() => onToggleResource(kind, item.id)}
                     aria-label={`${enabled ? "Disable" : "Enable"} ${item.name}`}
                   />
@@ -477,12 +490,21 @@ function SessionConfigPillPanel({
             const enabled = !new Set(session?.config?.disabled[kind] ?? []).has(
               item.id,
             );
+            const usable = isConfigItemUsable(item);
             return (
               <li key={item.id}>
-                <div className="flex items-start gap-3 px-3 py-2 transition hover:bg-surface-subtle">
+                <div
+                  className={[
+                    "flex items-start gap-3 px-3 py-2 transition",
+                    usable ? "hover:bg-surface-subtle" : "opacity-60",
+                  ].join(" ")}
+                >
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium text-foreground">
-                      {item.name}
+                    <span className="flex items-center gap-1.5">
+                      <span className="min-w-0 truncate text-sm font-medium text-foreground">
+                        {item.name}
+                      </span>
+                      {usable ? null : <ConfigStatusChip status={item.status} />}
                     </span>
                     {item.description && (
                       <span className="mt-0.5 block truncate text-xs text-muted-light">
@@ -491,8 +513,8 @@ function SessionConfigPillPanel({
                     )}
                   </span>
                   <Switch
-                    checked={enabled}
-                    disabled={locked}
+                    checked={enabled && usable}
+                    disabled={locked || !usable}
                     onChange={() => onToggleResource(item.id)}
                     aria-label={`${enabled ? "Disable" : "Enable"} ${item.name}`}
                   />
@@ -543,6 +565,21 @@ function Switch({
         ].join(" ")}
       />
     </button>
+  );
+}
+
+function ConfigStatusChip({ status }: { status: ConfigItemStatus | undefined }) {
+  return (
+    <span
+      className={[
+        "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium",
+        status === "failed"
+          ? "bg-rose-50 text-rose-600"
+          : "bg-slate-100 text-slate-500",
+      ].join(" ")}
+    >
+      {configItemStatusLabel(status)}
+    </span>
   );
 }
 

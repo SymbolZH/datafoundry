@@ -30,7 +30,7 @@ describe("workspace config defaults", () => {
       llm: [
         {
           id: "server-default",
-          name: "服务端默认",
+          name: "default",
           description: "Server env",
           enabled: false,
           settings: { modelName: "qwen-plus" },
@@ -41,14 +41,14 @@ describe("workspace config defaults", () => {
     expect(getEnabledLlmItems(workspaceConfig).map((item) => item.id)).toEqual([
       "server-default",
     ]);
-    expect(summarizeLlmItems(workspaceConfig.llm, "未配置")).toBe("服务端默认");
+    expect(summarizeLlmItems(workspaceConfig.llm, "未配置")).toBe("default");
   });
 });
 
 describe("active LLM selection", () => {
   it("keeps a valid dialog selection instead of restoring the workspace default", () => {
     const profiles = [
-      { id: "server-default", name: "服务端默认", description: "", enabled: true },
+      { id: "server-default", name: "default", description: "", enabled: true },
       { id: "profile-b", name: "Profile B", description: "", enabled: true },
     ];
 

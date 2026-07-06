@@ -53,6 +53,11 @@ import { basename, join, resolve, sep } from "node:path";
 import writeXlsxFile, { type SheetData } from "write-excel-file/node";
 
 import { resolveEffectiveRunConfig } from "./run-input.js";
+import {
+  llmEnvFingerprint,
+  modelProfileConnectivityPayloadChanged,
+  resolveModelProfileSaveStatus
+} from "./model-profile-connection-status.js";
 import { handleCapabilitiesRequest } from "./routes/capabilities.js";
 import type { ConfigApiContext, ConfigApiResponse } from "./routes/types.js";
 import { sessionTitleDto } from "./session-title.js";
@@ -1012,33 +1017,55 @@ const handleGenericResourceRequest = async (
       return ok({ id, latencyMs: 0, status: "connected", toolCount: tools.length, revision: updated.revision });
     }
     if (kind === "model-profile") {
-      const provider = resolveProfileProvider(resource, context);
-      const probe = await probeModelProvider(provider, numberValue(resource.payload.timeoutMs) ?? 30000);
-      const updated = context.metadataStore.configResources.upsert({
-        id,
-        workspace_id: context.workspaceId,
-        user_id: context.userId,
-        kind,
-        name: resource.name,
-        ...(resource.description ? { description: resource.description } : {}),
-        payload: {
+      try {
+        const provider = resolveProfileProvider(resource, context);
+        const probe = await probeModelProvider(provider, numberValue(resource.payload.timeoutMs) ?? 30000);
+        const payload: Record<string, unknown> = {
           ...resource.payload,
           capabilities: { reasoning: "unknown", toolCall: "untested" }
-        },
-        ...(resource.secret_ref ? { secret_ref: resource.secret_ref } : {}),
-        default_enabled: resource.default_enabled,
-        builtin: resource.builtin,
-        status: "connected",
-        expected_revision: resource.revision
-      });
-      return ok({
-        id,
-        latencyMs: Date.now() - startedAt,
-        model: probe.model,
-        response: probe.text,
-        status: "connected",
-        revision: updated.revision
-      });
+        };
+        if (resource.id === "server-default") {
+          payload.llmEnvFingerprint = llmEnvFingerprint(process.env);
+        }
+        const updated = context.metadataStore.configResources.upsert({
+          id,
+          workspace_id: context.workspaceId,
+          user_id: context.userId,
+          kind,
+          name: resource.name,
+          ...(resource.description ? { description: resource.description } : {}),
+          payload,
+          ...(resource.secret_ref ? { secret_ref: resource.secret_ref } : {}),
+          default_enabled: resource.default_enabled,
+          builtin: resource.builtin,
+          status: "connected",
+          expected_revision: resource.revision
+        });
+        return ok({
+          id,
+          latencyMs: Date.now() - startedAt,
+          model: probe.model,
+          response: probe.text,
+          status: "connected",
+          revision: updated.revision
+        });
+      } catch (error) {
+        context.metadataStore.configResources.upsert({
+          id,
+          workspace_id: context.workspaceId,
+          user_id: context.userId,
+          kind,
+          name: resource.name,
+          ...(resource.description ? { description: resource.description } : {}),
+          payload: resource.payload,
+          ...(resource.secret_ref ? { secret_ref: resource.secret_ref } : {}),
+          default_enabled: resource.default_enabled,
+          builtin: resource.builtin,
+          status: "failed",
+          expected_revision: resource.revision
+        });
+        throw error;
+      }
     }
     return ok({ id, status: "connected", validated: true, revision: resource.revision });
   }
@@ -1151,11 +1178,24 @@ const saveConfigResourceInTransaction = (
     "id", "name", "password", "revision", "status", "token"
   ]);
   const payload = Object.fromEntries(Object.entries(body).filter(([key]) => !reserved.has(key)));
+  const mergedPayload = { ...(current?.payload ?? {}), ...payload };
   if (kind === "model-profile") {
-    validateModelFallback(id, { ...(current?.payload ?? {}), ...payload }, context);
+    validateModelFallback(id, mergedPayload, context);
   }
   const description = stringValue(body.description) ?? current?.description;
   const expectedRevision = numberValue(body.revision);
+  const explicitStatus = kind === "model-profile" ? undefined : resourceStatusValue(body, kind);
+  const status = kind === "model-profile"
+    ? resolveModelProfileSaveStatus({
+        explicitStatus,
+        currentStatus: current?.status,
+        isNew: !current,
+        credentialsUpdated: Boolean(credentials),
+        connectivityChanged: current
+          ? modelProfileConnectivityPayloadChanged(current.payload, mergedPayload)
+          : false
+      })
+    : explicitStatus ?? current?.status ?? defaultResourceStatus(kind);
   const record = context.metadataStore.configResources.upsert({
     id,
     workspace_id: context.workspaceId,
@@ -1163,11 +1203,11 @@ const saveConfigResourceInTransaction = (
     kind,
     name: stringValue(body.name) ?? current?.name ?? id,
     ...(description ? { description } : {}),
-    payload: { ...(current?.payload ?? {}), ...payload },
+    payload: mergedPayload,
     ...(body.clearCredentials === true ? { secret_ref: null } : secretRef ? { secret_ref: secretRef } : {}),
     default_enabled: booleanValue(body.defaultEnabled, current?.default_enabled ?? true),
     builtin: booleanValue(body.builtin, current?.builtin ?? false),
-    status: resourceStatusValue(body, kind) ?? current?.status ?? defaultResourceStatus(kind),
+    status,
     ...(expectedRevision !== undefined ? { expected_revision: expectedRevision } : {})
   });
   return configResourceDto(record);
@@ -2525,7 +2565,7 @@ const buildRunDefaults = (context: Required<ConfigApiContext>): Record<string, u
     enabledKnowledgeIds: enabled("knowledge-base").map((item) => item.id),
     enabledMcpServerIds: enabled("mcp-server").map((item) => item.id),
     enabledSkillIds: enabled("skill").map((item) => item.id),
-    activeDatasourceId: datasourceIds[0],
+    ...(datasourceIds[0] ? { activeDatasourceId: datasourceIds[0] } : {}),
     activeLlmProfileId: enabled("model-profile")[0]?.id,
     activeSkillId: enabled("skill")[0]?.id
   };
@@ -2590,7 +2630,7 @@ const dataSourceDto = (record: DataSourceRecord): Record<string, unknown> => {
     hasSecret: Boolean(record.credential_ref),
     defaultEnabled: booleanValue(config.defaultEnabled, true),
     builtin: booleanValue(config.builtin, false),
-    connectionStatus: datasourceStatus(record.status),
+    connectionStatus: datasourceStatus(record),
     revision: record.revision,
     createdAt: record.created_at,
     updatedAt: record.updated_at
@@ -2852,7 +2892,15 @@ const tryParseRecord = (value: string): Record<string, unknown> | undefined => {
   }
 };
 const slugify = (value: string): string => value.toLowerCase().replace(/[^a-z0-9_-]+/gu, "-").replace(/^-|-$/gu, "");
-const datasourceStatus = (status: DataSourceRecord["status"]): string => status === "ready" ? "connected" : status;
+// A datasource is only "connected" once it has actually passed a connectivity
+// test (`last_test_at` is set). A freshly created/seeded "ready" record that has
+// never been tested reports "untested" so the client can gate + auto-test it.
+const datasourceStatus = (record: DataSourceRecord): string => {
+  if (record.status === "ready") {
+    return record.last_test_at ? "connected" : "untested";
+  }
+  return record.status;
+};
 const resourceStatusField = (kind: ConfigResourceKind): string => {
   if (kind === "knowledge-base") {
     return "indexStatus";

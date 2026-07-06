@@ -789,6 +789,11 @@ try {
   assert.equal(modelProfile.body.data.contextLength, 64000);
   assert.equal(modelProfile.body.data.reasoningModel, true);
   assert.equal(JSON.stringify(modelProfile.body).includes("smoke-model-key"), false);
+  assert.equal(modelProfile.body.data.connectionStatus, "untested");
+
+  const serverDefaultProfile = await requestJson("/api/v1/model-profiles/server-default");
+  assert.equal(serverDefaultProfile.body.data.connectionStatus, "untested");
+
   const modelProfileTest = await requestJson("/api/v1/model-profiles/smoke-openai-compatible/test", {
     method: "POST"
   });
@@ -923,6 +928,37 @@ try {
   const testedModelProfile = await requestJson("/api/v1/model-profiles/smoke-openai-compatible");
   assert.equal(testedModelProfile.body.data.connectionStatus, "connected");
   assert.equal(testedModelProfile.body.data.revision, modelProfileTest.body.data.revision);
+
+  const patchedModelProfile = await requestJson("/api/v1/model-profiles/smoke-openai-compatible", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      modelName: "smoke-model-v2",
+      revision: testedModelProfile.body.data.revision
+    })
+  });
+  assert.equal(patchedModelProfile.response.status, 200);
+  assert.equal(patchedModelProfile.body.data.connectionStatus, "untested");
+
+  const badModelProfile = await requestJson("/api/v1/model-profiles", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      id: "smoke-bad-model",
+      name: "Smoke Bad Model",
+      provider: "openai-compatible",
+      modelName: "smoke-model",
+      baseUrl: "http://127.0.0.1:1",
+      credentials: { apiKey: "bad-key" }
+    })
+  });
+  assert.equal(badModelProfile.response.status, 201);
+  const badModelProfileTest = await requestJson("/api/v1/model-profiles/smoke-bad-model/test", {
+    method: "POST"
+  });
+  assert.equal(badModelProfileTest.body.success, false);
+  const failedModelProfile = await requestJson("/api/v1/model-profiles/smoke-bad-model");
+  assert.equal(failedModelProfile.body.data.connectionStatus, "failed");
 
   const effective = resolveEffectiveRunConfig({
     threadId: "effective-session",

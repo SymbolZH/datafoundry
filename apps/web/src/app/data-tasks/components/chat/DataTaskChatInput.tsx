@@ -18,8 +18,10 @@ import type {
   WorkspaceConfigItem,
 } from "../../data-task-state";
 import {
+  configItemStatusLabel,
   getLlmDisplayLabel,
   getLlmOptionSubtitle,
+  isConfigItemUsable,
 } from "../../data-task-state";
 import { MentionChips, useMentionAutocomplete } from "./chat-mentions";
 import { AttachmentChips } from "./AttachmentChips";
@@ -236,7 +238,8 @@ function DataTaskChatInputLayout({
   onDeleteQueuedPrompt?: (id: string) => void;
   onSendQueuedPromptNow?: (id: string) => void;
 }) {
-  const { chatColumnWidth, draftPromptRequest } = useDataTaskChatInputBindings();
+  const { chatColumnWidth, draftPromptRequest, onDraftPromptConsumed } =
+    useDataTaskChatInputBindings();
   const chatInputWidth = resolveChatInputWidth(chatColumnWidth);
   const mention = useMentionAutocomplete({
     resources: mentionResources,
@@ -283,7 +286,13 @@ function DataTaskChatInputLayout({
       draftPromptRequest.text.length,
     );
     requestAnimationFrame(scheduleChatTextareaResize);
-  }, [attachmentsApi.containerRef, draftPromptRequest, mode]);
+    onDraftPromptConsumed(draftPromptRequest.id);
+  }, [
+    attachmentsApi.containerRef,
+    draftPromptRequest,
+    mode,
+    onDraftPromptConsumed,
+  ]);
 
   const focusTextArea = (textarea: HTMLTextAreaElement) => {
     textarea.focus({ preventScroll: true });
@@ -713,6 +722,7 @@ function ChatModelPicker({
   const activeItem =
     llmOptions.find((item) => item.id === activeLlmId) ?? llmOptions[0] ?? null;
   const label = activeItem ? getLlmDisplayLabel(activeItem) : "Select model";
+  const activeUnavailable = activeItem ? !isConfigItemUsable(activeItem) : false;
 
   useEffect(() => {
     if (!open) return;
@@ -731,13 +741,23 @@ function ChatModelPicker({
         type="button"
         aria-haspopup="listbox"
         aria-expanded={open}
-        title="Switch model"
+        title={
+          activeUnavailable
+            ? "This model has not passed a connection test"
+            : "Switch model"
+        }
         onClick={() => setOpen((value) => !value)}
         className={[
           "chat-model-picker flex max-w-[168px] cursor-pointer items-center gap-0.5 px-1 py-1 text-xs font-medium transition-colors duration-200",
           open ? "text-primary" : "text-foreground hover:text-primary",
         ].join(" ")}
       >
+        {activeUnavailable ? (
+          <span
+            className="mr-0.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-rose-500"
+            aria-hidden
+          />
+        ) : null}
         <span className="truncate">{label}</span>
         <ChevronDownIcon open={open} />
       </button>
@@ -759,21 +779,33 @@ function ChatModelPicker({
             <ul className="max-h-64 overflow-y-auto py-1">
               {llmOptions.map((item) => {
                 const selected = item.id === activeItem?.id;
+                const usable = isConfigItemUsable(item);
                 return (
                   <li key={item.id}>
                     <button
                       type="button"
                       role="option"
                       aria-selected={selected}
+                      aria-disabled={!usable}
+                      disabled={!usable}
+                      title={
+                        usable
+                          ? undefined
+                          : "This model has not passed a connection test. Run \"Test connection\" in the model configuration."
+                      }
                       onClick={() => {
+                        if (!usable) return;
                         onActiveLlmChange(item.id);
                         setOpen(false);
                       }}
                       className={[
-                        "flex w-full cursor-pointer items-start gap-2 px-3 py-2 text-left transition-colors duration-200",
+                        "flex w-full items-start gap-2 px-3 py-2 text-left transition-colors duration-200",
+                        usable ? "cursor-pointer" : "cursor-not-allowed opacity-60",
                         selected
                           ? "bg-primary-light/8"
-                          : "hover:bg-surface-subtle",
+                          : usable
+                            ? "hover:bg-surface-subtle"
+                            : "",
                       ].join(" ")}
                     >
                       <span className="min-w-0 flex-1">
@@ -784,9 +816,22 @@ function ChatModelPicker({
                           {getLlmOptionSubtitle(item)}
                         </span>
                       </span>
-                      {selected && (
-                        <span className="mt-0.5 shrink-0 text-primary">
-                          <CheckIcon />
+                      {usable ? (
+                        selected ? (
+                          <span className="mt-0.5 shrink-0 text-primary">
+                            <CheckIcon />
+                          </span>
+                        ) : null
+                      ) : (
+                        <span
+                          className={[
+                            "mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium",
+                            item.status === "failed"
+                              ? "bg-rose-50 text-rose-600"
+                              : "bg-slate-100 text-slate-400",
+                          ].join(" ")}
+                        >
+                          {configItemStatusLabel(item.status)}
                         </span>
                       )}
                     </button>

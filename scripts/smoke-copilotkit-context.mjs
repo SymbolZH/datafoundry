@@ -1,5 +1,6 @@
 import { EventType } from "@ag-ui/core";
 import { extractDatasourceId, extractEffectiveRunConfig, extractLastUserText } from "../apps/api/dist/run-input.js";
+import { createDataFoundry, createDataFoundryRunContext, DATA_AGENT_TOOL_NAMES } from "../packages/agent-runtime/dist/index.js";
 import { TaskPlanProjector } from "../apps/api/dist/task-plan-projector.js";
 
 const baseInput = {
@@ -130,6 +131,66 @@ const pinnedConfig = extractEffectiveRunConfig({
   }
 }, "default-db");
 assert(JSON.stringify(pinnedConfig.pinnedPaths) === JSON.stringify(["output/report.html", "ok/file.csv"]), "pinnedPaths should drop absolute/traversal/NUL entries");
+
+const noDatasourceConfig = extractEffectiveRunConfig({
+  ...baseInput,
+  forwardedProps: {
+    run_config: {
+      enabledDatasourceIds: [],
+      enabledKnowledgeIds: []
+    }
+  }
+}, "default-db");
+assert(noDatasourceConfig.activeDatasourceId === undefined, "empty enabled datasources should omit activeDatasourceId");
+assert(noDatasourceConfig.enabledDatasourceIds.length === 0, "empty enabled datasources should stay empty");
+
+const legacyDatasourceButEmptyEnabled = extractEffectiveRunConfig({
+  ...baseInput,
+  forwardedProps: {
+    datasourceId: "default-db",
+    run_config: {
+      enabledDatasourceIds: []
+    }
+  }
+}, "default-db");
+assert(
+  legacyDatasourceButEmptyEnabled.activeDatasourceId === undefined,
+  "legacy datasourceId should not resurrect an active datasource when enabled list is empty"
+);
+assert(
+  legacyDatasourceButEmptyEnabled.enabledDatasourceIds.length === 0,
+  "explicit empty enabledDatasourceIds should win over legacy datasourceId"
+);
+
+assert(
+  createDataFoundryRunContext({
+    user_id: "dev-user",
+    session_id: "thread-smoke",
+    run_id: "run-smoke",
+    user_input: "你好",
+    chat_mode: "copilotkit"
+  }).enabled_datasource_ids === undefined,
+  "no enabled datasources should omit enabled_datasource_ids from run context"
+);
+
+const noDatasourceAgent = await createDataFoundry({
+  dataGateway: { listDataSources: async () => ({ datasources: [] }) },
+  emitter: { emit: () => undefined },
+  messages: [],
+  modelProvider: { kind: "mastra-router", model: "openai/smoke", model_name: "smoke-model" },
+  runContext: createDataFoundryRunContext({
+    user_id: "dev-user",
+    session_id: "thread-smoke",
+    run_id: "run-smoke",
+    user_input: "你好",
+    chat_mode: "copilotkit"
+  })
+});
+const noDatasourceToolNames = Object.keys(await noDatasourceAgent.agent.listTools());
+assert(
+  DATA_AGENT_TOOL_NAMES.every((name) => !noDatasourceToolNames.includes(name)),
+  "data tools should be omitted when no datasource is enabled"
+);
 
 const projector = new TaskPlanProjector({
   user_id: "dev-user",

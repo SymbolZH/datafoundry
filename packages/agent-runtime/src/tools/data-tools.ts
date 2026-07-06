@@ -106,7 +106,7 @@ export const createDataFoundryToolRegistry = (input: CreateDataFoundryToolRegist
 
   const listDataSources = async (toolInput: { enabled_only?: boolean } = {}): Promise<unknown> => {
     throwIfAborted(input.abortSignal);
-    const allowedIds = new Set(input.runContext.enabled_datasource_ids);
+    const allowedIds = new Set(input.runContext.enabled_datasource_ids ?? []);
     const results = await input.dataGateway.listDataSources({
       user_id: input.runContext.user_id,
       ...(toolInput.enabled_only !== undefined ? { enabled_only: toolInput.enabled_only } : {})
@@ -407,7 +407,7 @@ const emitFailedStep = (
 
 const resolveDatasourceId = (context: AgentRunContext, requestedDatasourceId: string | undefined): string => {
   const datasourceId = requestedDatasourceId ?? context.selected_datasource_id;
-  if (!context.enabled_datasource_ids.includes(datasourceId)) {
+  if (!datasourceId || !(context.enabled_datasource_ids ?? []).includes(datasourceId)) {
     throw new Error("DATASOURCE_NOT_SELECTED");
   }
   return datasourceId;

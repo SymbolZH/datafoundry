@@ -302,4 +302,40 @@ describe("resolveActiveDatasourceId", () => {
       resolveActiveDatasourceId(store, narrowed, selection, "db-default"),
     ).toBe("db-default");
   });
+
+  it("returns undefined when no datasource is enabled in the session", () => {
+    const noDbSession = toggleSessionResource(
+      toggleSessionResource(session, "db", "db-default"),
+      "db",
+      "db-orders",
+    );
+    expect(
+      resolveActiveDatasourceId(
+        store,
+        noDbSession,
+        emptyPerRunSelection(),
+        "db-default",
+      ),
+    ).toBeUndefined();
+  });
+});
+
+describe("buildRunConfig without datasources", () => {
+  it("omits activeDatasourceId when the session has no enabled db", () => {
+    const noDbSession = toggleSessionResource(
+      toggleSessionResource(session, "db", "db-default"),
+      "db",
+      "db-orders",
+    );
+    const config = buildRunConfig(store, {
+      activeLlmId: "llm-1",
+      defaultDatasourceId: "db-default",
+      session: noDbSession,
+    });
+    expect(config.enabledDatasourceIds).toEqual([]);
+    expect(config.activeDatasourceId).toBeUndefined();
+    expect(buildRunForwardedProps(undefined, config)).toEqual({
+      run_config: config,
+    });
+  });
 });

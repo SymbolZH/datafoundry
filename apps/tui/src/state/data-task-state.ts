@@ -1023,7 +1023,7 @@ function defaultWorkspaceConfig(): WorkspaceConfigStore {
     llm: [
       {
         id: "server-default",
-        name: "服务端默认",
+        name: "default",
         description: "使用 dataFoundry 服务端 .env 中的 LLM_PROVIDER / LLM_BASE_URL / LLM_MODEL",
         enabled: true,
         builtin: true,

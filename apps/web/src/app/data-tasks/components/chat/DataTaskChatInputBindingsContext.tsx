@@ -44,6 +44,7 @@ export type DataTaskChatInputBindings = {
   sessionStartedHints?: SessionStartedHints;
   onToggleSessionResource: (kind: PerRunMentionKind, id: string) => void;
   draftPromptRequest: DataTaskDraftPromptRequest | null;
+  onDraftPromptConsumed: (id: number) => void;
   chatColumnWidth: number;
   agentId: string;
   activeThreadId: string | null;

@@ -42,7 +42,7 @@ type CreateRunMemoryAssemblyInput = {
   modelTemperature?: number | undefined;
   runId: string;
   runInput: RunAgentInput;
-  selectedDatasourceId: string;
+  selectedDatasourceId?: string;
   sessionId: string;
   taskStateRuntime: TaskStateRuntime;
   userId: string;
@@ -136,7 +136,7 @@ export const createRunMemoryAssembly = async (
 
   const conversationMemoryObserver = conversationMemory.createEventObserver({ runId: input.runId });
   const longTermMemories = resolveLongTermMemories({
-    datasourceId: input.selectedDatasourceId,
+    ...(input.selectedDatasourceId ? { datasourceId: input.selectedDatasourceId } : {}),
     metadataStore: input.metadataStore,
     sessionId: input.sessionId,
     userId: input.userId,
@@ -173,7 +173,7 @@ export const createRunMemoryAssembly = async (
       const extractedMemories = await longTermMemoryWriter.extractAndPersist({
         assistantRecords,
         currentUserRecord,
-        datasourceId: input.selectedDatasourceId,
+        ...(input.selectedDatasourceId ? { datasourceId: input.selectedDatasourceId } : {}),
         runId: input.runId,
         sessionId: input.sessionId,
         signal,
@@ -192,7 +192,7 @@ export const createRunMemoryAssembly = async (
 };
 
 const resolveLongTermMemories = (input: {
-  datasourceId: string;
+  datasourceId?: string;
   metadataStore: MetadataStore;
   sessionId: string;
   userId: string;
@@ -201,7 +201,7 @@ const resolveLongTermMemories = (input: {
   const memories = input.metadataStore.longTermMemories.listRelevant({
     user_id: input.userId,
     session_id: input.sessionId,
-    datasource_id: input.datasourceId,
+    ...(input.datasourceId ? { datasource_id: input.datasourceId } : {}),
     query: input.userInput,
     limit: 6
   });

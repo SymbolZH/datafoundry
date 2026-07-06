@@ -75,11 +75,16 @@ export function getWorkspaceGridTemplateColumns({
   );
   const chatColumn = `minmax(${CHAT_MIN_WIDTH}px, 1fr)`;
 
-  if (isConfigPanelOpen || !isRightPanelOpen) {
-    return `${leftColumn} ${chatColumn}`;
-  }
+  // Keep the track *count* constant (always three columns) so a CSS transition
+  // on `grid-template-columns` can interpolate width smoothly. Removing/adding
+  // the right track instead makes the transition discrete: the browser holds
+  // the old track count for part of the duration, briefly reserving an empty
+  // fixed-width column flush to the page's right edge while the panel DOM node
+  // has already unmounted. Collapsing the right track to 0 avoids that gap.
+  const rightVisible = !isConfigPanelOpen && isRightPanelOpen;
+  const rightColumn = fixedGridColumn(rightVisible ? rightPanelWidth : 0);
 
-  return `${leftColumn} ${chatColumn} ${fixedGridColumn(rightPanelWidth)}`;
+  return `${leftColumn} ${chatColumn} ${rightColumn}`;
 }
 
 /**

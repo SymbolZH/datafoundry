@@ -58,6 +58,7 @@ import {
   removePerRunMention,
   resolveActiveLlmProfileId,
   resolveActiveDatasourceId,
+  resolveSendBlockReason,
   skillSettingsFromPackage,
   SKILL_PACKAGE_LOCAL_ONLY_KEYS,
   workspaceConfigItemDraftEquals,
@@ -73,6 +74,7 @@ import {
   normalizeKbSettings,
   normalizeLlmSettingsExtended,
   visibleConfigFields,
+  workspaceConfigItemStatusBadge,
 } from "./data-task-state";
 import { configApi } from "../../lib/config-api/client";
 import {
@@ -222,6 +224,7 @@ import {
 } from "./components/chat/DataTaskWelcome";
 import { SessionHeaderResourceChips } from "./components/chat/SessionResourceSummary";
 import { SessionConversationRestore } from "./components/chat/SessionConversationRestore";
+import { SessionConversationScrollRestore } from "./components/chat/SessionConversationScrollRestore";
 import { SessionArtifactsRestore } from "./components/chat/SessionArtifactsRestore";
 import { CollaborationInterruptHandler } from "./components/chat/CollaborationInterruptHandler";
 import { RestoredInterruptHandler } from "./components/chat/RestoredInterruptHandler";
@@ -397,8 +400,19 @@ function StableDataTaskChatInput({
   }, [bindings.stopActiveChatRunRef, inputProps.onStop]);
 
   const handleSubmitMessage = (value: string) => {
-    const ready = attachmentsApi.consumeAttachments();
     const forwardedProps = bindings.getRunForwardedProps();
+    if (agent) {
+      const blockReason = resolveSendBlockReason(
+        bindings.workspaceConfig,
+        bindings.activeLlmId,
+        forwardedProps.datasourceId,
+      );
+      if (blockReason) {
+        reportRunError(new Error(blockReason));
+        return;
+      }
+    }
+    const ready = attachmentsApi.consumeAttachments();
     if (agent) {
       const submitMode = resolveQueuedSubmitMode({
         agentIsRunning: Boolean(agent.isRunning),
@@ -724,6 +738,12 @@ function DataTaskWorkspace({
     id: number;
     text: string;
   } | null>(null);
+  const consumeDraftPromptRequest = useCallback((id: number) => {
+    setDraftPromptRequest((current) => (current?.id === id ? null : current));
+  }, []);
+  const clearDraftPromptRequest = useCallback(() => {
+    setDraftPromptRequest(null);
+  }, []);
   const [pendingBranchRun, setPendingBranchRun] = useState<PendingBranchRun | null>(null);
   const stopActiveChatRunRef = useRef<(() => void) | undefined>(undefined);
   const [chatColumnWidth, setChatColumnWidth] = useState(1280);
@@ -1179,7 +1199,8 @@ function DataTaskWorkspace({
     setSelection(null);
     setConfigPanel(null);
     setWorkspaceFilesPanelOpen(false);
-  }, []);
+    clearDraftPromptRequest();
+  }, [clearDraftPromptRequest]);
 
   const renameSession = useCallback((sessionId: string, title: string) => {
     setSessions((current) => renameChatSession(current, sessionId, title));
@@ -1217,7 +1238,8 @@ function DataTaskWorkspace({
     setIsTraceOpen(false);
     setConfigPanel(null);
     setWorkspaceFilesPanelOpen(false);
-  }, []);
+    clearDraftPromptRequest();
+  }, [clearDraftPromptRequest]);
 
   const createBranchRewrite = useCallback(async ({ runId, text }: BranchRewriteRequest) => {
     if (!activeThreadId) return;
@@ -1296,7 +1318,7 @@ function DataTaskWorkspace({
           activeSession: activeSession
             ? { id: activeSession.id, title: activeSession.title }
             : null,
-          datasourceId: defaultDatasourceId,
+          ...(activeDatasourceId ? { datasourceId: activeDatasourceId } : {}),
           enabledSkillIds: enabledSkillIds(workspaceConfig),
           activeLlmId,
           activeLlm: activeLlmProfile(workspaceConfig, activeLlmId),
@@ -1310,7 +1332,7 @@ function DataTaskWorkspace({
           selection,
         }),
       ) as JsonSerializable,
-    [activeSession, activeLlmId, liveRun, selection, workspaceConfig],
+    [activeSession, activeDatasourceId, activeLlmId, liveRun, selection, workspaceConfig],
   );
 
   const visibleArtifacts = liveRun.artifacts;
@@ -1392,7 +1414,7 @@ function DataTaskWorkspace({
   // `run_config` via effectiveRunConfig merge.
   useAgentContext({
     description: "datasource_id",
-    value: activeDatasourceId,
+    value: activeDatasourceId ?? "",
   });
   // Forward-compatible single run config (config-management-api.md §5).
   // Backend merges this with workspace defaults into effectiveRunConfig.
@@ -1430,6 +1452,7 @@ function DataTaskWorkspace({
       sessionStartedHints,
       onToggleSessionResource: toggleSessionResourceItem,
       draftPromptRequest,
+      onDraftPromptConsumed: consumeDraftPromptRequest,
       chatColumnWidth,
       agentId,
       activeThreadId: activeThreadId ?? null,
@@ -1449,6 +1472,7 @@ function DataTaskWorkspace({
       activeThreadId,
       capabilitiesReady,
       draftPromptRequest,
+      consumeDraftPromptRequest,
       applyFirstUserMessageTitle,
       cancelCurrentRun,
       stopActiveRun,
@@ -1604,6 +1628,7 @@ function DataTaskWorkspace({
           setIsTraceOpen(false);
           setConfigPanel(null);
           setWorkspaceFilesPanelOpen(false);
+          clearDraftPromptRequest();
         }}
         onRenameSession={renameSession}
         onDeleteSession={deleteSession}
@@ -5165,7 +5190,7 @@ function DatasourceConfigList({
           {items.map((item) => {
             const type = item.settings?.type ?? "unknown";
             const typeLabel = typeLabelByName.get(type) ?? type;
-            const status = configItemStatusBadge(item);
+            const status = workspaceConfigItemStatusBadge(item);
             const connection = summarizeDatasourceConnection(item);
             return (
               <article
@@ -5428,6 +5453,7 @@ function ConfigItemDetailView({
             label="Name"
             value={item.name}
             readOnly={nameReadOnly}
+            required
             placeholder={`Enter ${configKindLabel}Name`}
             onChange={(name) => onUpdate({ name })}
           />
@@ -5961,18 +5987,6 @@ function DetailField({ label, value }: { label: string; value: string }) {
   );
 }
 
-// Status badge from backend test/validation fields mapped into `item.status`.
-function configItemStatusBadge(
-  item: WorkspaceConfigItem,
-): { label: string; className: string } | null {
-  if (item.status === "connected")
-    return { label: "Connected", className: "bg-emerald-50 text-emerald-700" };
-  if (item.status === "failed")
-    return { label: "Failed", className: "bg-rose-50 text-rose-700" };
-  if (item.builtin) return null;
-  return { label: "Not tested", className: "bg-slate-100 text-slate-400" };
-}
-
 function ConfigItemCard({
   item,
   onSelect,
@@ -5986,7 +6000,7 @@ function ConfigItemCard({
     onSelect ? "cursor-pointer hover:bg-slate-50" : "",
   ].join(" ");
 
-  const status = configItemStatusBadge(item);
+  const status = workspaceConfigItemStatusBadge(item);
   const content = (
     <div className="min-w-0">
       <div className="flex items-center gap-2">
@@ -6343,6 +6357,7 @@ function ChatPane({
               agentId={agentId}
               capabilitiesReady={capabilitiesReady}
             />
+            <SessionConversationScrollRestore agentId={agentId} />
             <PendingBranchRunDispatcher
               pending={pendingBranchRun}
               getRunForwardedProps={getRunForwardedProps}

@@ -44,14 +44,30 @@ describe("workspace layout", () => {
     ).toContain(fixedGridColumn(RIGHT_PANEL_DEFAULT_WIDTH));
   });
 
-  it("releases the middle column when the right console is closed", () => {
+  it("collapses the right track to zero (keeping three tracks) when the console is closed", () => {
+    // Track count stays constant so `grid-template-columns` transitions
+    // smoothly instead of leaving an empty reserved column mid-animation.
     expect(
       getWorkspaceGridTemplateColumns({
         isConfigPanelOpen: false,
         isRightPanelOpen: false,
         sidebarCollapsed: false,
       }),
-    ).toBe(`${fixedGridColumn(LEFT_PANEL_DEFAULT_WIDTH)} minmax(${CHAT_MIN_WIDTH}px, 1fr)`);
+    ).toBe(
+      `${fixedGridColumn(LEFT_PANEL_DEFAULT_WIDTH)} minmax(${CHAT_MIN_WIDTH}px, 1fr) ${fixedGridColumn(0)}`,
+    );
+  });
+
+  it("collapses the right track to zero when a config panel takes over the middle column", () => {
+    expect(
+      getWorkspaceGridTemplateColumns({
+        isConfigPanelOpen: true,
+        isRightPanelOpen: true,
+        sidebarCollapsed: false,
+      }),
+    ).toBe(
+      `${fixedGridColumn(LEFT_PANEL_DEFAULT_WIDTH)} minmax(${CHAT_MIN_WIDTH}px, 1fr) ${fixedGridColumn(0)}`,
+    );
   });
 
   it("does not cap the chat surface width", () => {

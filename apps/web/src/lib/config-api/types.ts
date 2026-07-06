@@ -256,7 +256,7 @@ export type RunDefaultsDto = {
   enabledKnowledgeIds: string[];
   enabledMcpServerIds: string[];
   enabledSkillIds: string[];
-  activeDatasourceId: string;
+  activeDatasourceId?: string;
   activeLlmProfileId: string | null;
   activeSkillId: string;
 };
