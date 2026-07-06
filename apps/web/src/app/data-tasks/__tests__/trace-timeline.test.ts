@@ -252,6 +252,53 @@ describe("buildTraceTimeline", () => {
     );
   });
 
+  it("normalizes nested SQL and observation-wrapped schema tool results", () => {
+    let run = createInitialLiveRun();
+    run = reduceLiveRunEvent(run, { type: "RUN_STARTED" });
+    run = reduceLiveRunEvent(run, {
+      type: "TOOL_CALL_START",
+      toolCallId: "tool-sql-nested",
+      toolCallName: "run_sql_readonly",
+      args: { sql: "SELECT COUNT(*) AS total_orders FROM orders" },
+    });
+    run = reduceLiveRunEvent(run, {
+      type: "TOOL_CALL_RESULT",
+      toolCallId: "tool-sql-nested",
+      toolCallName: "run_sql_readonly",
+      content: JSON.stringify({
+        sql: "SELECT COUNT(*) AS total_orders FROM orders",
+        result: {
+          columns: ["total_orders"],
+          rows: [[128]],
+          row_count: 128,
+          elapsed_ms: 33,
+        },
+      }),
+    });
+    run = reduceLiveRunEvent(run, {
+      type: "TOOL_CALL_START",
+      toolCallId: "tool-schema-wrap",
+      toolCallName: "inspect_schema",
+    });
+    run = reduceLiveRunEvent(run, {
+      type: "TOOL_CALL_RESULT",
+      toolCallId: "tool-schema-wrap",
+      toolCallName: "inspect_schema",
+      content: JSON.stringify({
+        observation: JSON.stringify({
+          tables: [{ name: "orders", columns: [{ name: "id", type: "INT" }] }],
+        }),
+      }),
+    });
+    run = reduceLiveRunEvent(run, { type: "RUN_FINISHED" });
+
+    const entries = buildTraceTimeline(run);
+    expect(entries.find((entry) => entry.toolCallId === "tool-sql-nested")?.scannedRows).toBe(128);
+    expect(
+      entries.find((entry) => entry.toolCallId === "tool-schema-wrap")?.schemaTables?.[0]?.name,
+    ).toBe("orders");
+  });
+
   it("interleaves tool calls between archived run segments", () => {
     const run = {
       ...createInitialLiveRun(),

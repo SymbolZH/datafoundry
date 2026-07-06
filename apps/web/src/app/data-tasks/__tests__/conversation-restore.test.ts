@@ -18,6 +18,7 @@ import {
 import { ConfigApiError } from "../../../lib/config-api/types";
 import {
   createInitialLiveRun,
+  formatWorkspaceMetadataSummary,
   reconcileLiveRunArtifacts,
   reduceLiveRunEvent,
 } from "../live-run-state";
@@ -1566,6 +1567,177 @@ describe("replayRestorableCustomEvents", () => {
     const run = replayRestorableCustomEvents(createInitialLiveRun(), dto);
     expect(run.audits).toHaveLength(1);
     expect(run.tokenUsageEvents).toHaveLength(1);
+  });
+
+  it("replays workspace and sandbox custom events scoped to the active run", () => {
+    let run = reduceLiveRunEvent(createInitialLiveRun(), {
+      type: "RUN_STARTED",
+      runId: "run-1",
+    });
+    const dto: SessionConversationDto = {
+      sessionId: "thread-1",
+      messages: [],
+      runEventRefs: [],
+      toolCalls: [],
+      restorableCustomEvents: [
+        {
+          runId: "run-1",
+          seq: 1,
+          name: "workspace.metadata",
+          value: { toolCallId: "tc-write", toolName: "write_file", path: "reports/summary.md" },
+        },
+        {
+          runId: "run-2",
+          seq: 2,
+          name: "workspace.metadata",
+          value: { toolCallId: "tc-other", toolName: "write_file", path: "other.md" },
+        },
+        {
+          runId: "run-1",
+          seq: 3,
+          name: "sandbox.output",
+          value: { kind: "stdout", text: "verify-ok\n" },
+        },
+      ],
+    };
+
+    run = replayRestorableCustomEvents(run, dto);
+    expect(run.workspaceMetadata).toHaveLength(1);
+    expect(run.workspaceMetadata[0]).toMatchObject({
+      toolCallId: "tc-write",
+      toolName: "write_file",
+    });
+    expect(run.sandboxOutputs).toHaveLength(1);
+  });
+});
+
+describe("hydrateLiveRunFromConversation workspace signals", () => {
+  it("derives workspace metadata from restored write_file tool calls", () => {
+    const dto: SessionConversationDto = {
+      sessionId: "thread-workspace",
+      messages: [],
+      runEventRefs: [],
+      toolCalls: [
+        {
+          runId: "run-1",
+          toolCallId: "tc-write",
+          status: "completed",
+          toolName: "write_file",
+          callEventSeq: 1,
+          resultPreview: "Wrote 128 bytes to reports/summary.md",
+        },
+      ],
+    };
+
+    const run = hydrateLiveRunFromConversation(createInitialLiveRun(), dto);
+    expect(run.workspaceMetadata).toHaveLength(1);
+    expect(run.workspaceMetadata[0]).toMatchObject({
+      toolCallId: "tc-write",
+      toolName: "write_file",
+    });
+    expect(formatWorkspaceMetadataSummary(run.workspaceMetadata[0]!)).toContain(
+      "reports/summary.md",
+    );
+  });
+
+  it("keeps persisted workspace signals from earlier restored run segments", () => {
+    const dto: SessionConversationDto = {
+      sessionId: "thread-workspace-history",
+      messages: [],
+      runEventRefs: [],
+      toolCalls: [
+        {
+          runId: "run-1",
+          toolCallId: "tc-write-1",
+          status: "completed",
+          toolName: "write_file",
+          callEventSeq: 1,
+          resultPreview: "Workspace write completed.",
+        },
+        {
+          runId: "run-1",
+          toolCallId: "tc-ask",
+          status: "pending",
+          toolName: "ask_user",
+          callEventSeq: 2,
+        },
+        {
+          runId: "run-2",
+          toolCallId: "tc-write-2",
+          status: "completed",
+          toolName: "write_file",
+          callEventSeq: 3,
+          resultPreview: "Wrote 128 bytes to reports/second.md",
+        },
+      ],
+      restorableCustomEvents: [
+        {
+          runId: "run-1",
+          seq: 1,
+          name: "workspace.metadata",
+          value: {
+            toolCallId: "tc-write-1",
+            toolName: "write_file",
+            path: "reports/from-custom-first.md",
+          },
+        },
+        {
+          runId: "run-2",
+          seq: 2,
+          name: "workspace.metadata",
+          value: {
+            toolCallId: "tc-write-2",
+            toolName: "write_file",
+            path: "reports/second.md",
+          },
+        },
+      ],
+    };
+
+    const run = hydrateLiveRunFromConversation(createInitialLiveRun(), dto);
+    expect(
+      run.workspaceMetadata
+        .map((entry) => ({
+          toolCallId: entry.toolCallId,
+          path: (entry.payload as { path?: string }).path,
+        }))
+        .sort((left, right) => String(left.toolCallId).localeCompare(String(right.toolCallId))),
+    ).toEqual([
+      { toolCallId: "tc-write-1", path: "reports/from-custom-first.md" },
+      { toolCallId: "tc-write-2", path: "reports/second.md" },
+    ]);
+  });
+
+  it("derives sandbox outputs from every restored execute_command tool call", () => {
+    const dto: SessionConversationDto = {
+      sessionId: "thread-sandbox-history",
+      messages: [],
+      runEventRefs: [],
+      toolCalls: [
+        {
+          runId: "run-1",
+          toolCallId: "tc-command-1",
+          status: "completed",
+          toolName: "execute_command",
+          callEventSeq: 1,
+          resultPreview: "first-ok\n",
+        },
+        {
+          runId: "run-1",
+          toolCallId: "tc-command-2",
+          status: "completed",
+          toolName: "execute_command",
+          callEventSeq: 2,
+          resultPreview: "second-ok\n",
+        },
+      ],
+    };
+
+    const run = hydrateLiveRunFromConversation(createInitialLiveRun(), dto);
+    expect(run.sandboxOutputs.map((output) => output.payload)).toEqual([
+      { kind: "stdout", text: "first-ok" },
+      { kind: "stdout", text: "second-ok" },
+    ]);
   });
 });
 

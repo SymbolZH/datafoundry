@@ -8,6 +8,7 @@ import type {
 import { dataStepKindForTool, dataStepLabel } from "./data-task-state";
 import type { LiveAudit, LiveRun, LiveToolCallRecord } from "./live-run-state";
 import { deriveRunUsage, resolveTraceToolStatus } from "./live-run-state";
+import { parseToolResultRecord } from "./tool-result-normalize";
 
 export type TraceEntryKind =
   | "run_started"
@@ -107,14 +108,7 @@ function auditStatusLabel(status?: string): string {
 
 function parseResultObject(result?: string): Record<string, unknown> | null {
   if (!result) return null;
-  try {
-    const parsed = JSON.parse(result);
-    return typeof parsed === "object" && parsed !== null
-      ? (parsed as Record<string, unknown>)
-      : null;
-  } catch {
-    return null;
-  }
+  return parseToolResultRecord(result);
 }
 
 function parseSchemaTables(parsed: Record<string, unknown> | null): SchemaTable[] {

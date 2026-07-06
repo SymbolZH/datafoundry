@@ -82,7 +82,7 @@ export function parseToolResultError(result?: string): ParsedToolResultError | n
             ? parsed.message
             : typeof parsed.error === "string"
               ? parsed.error
-              : "Tool execution failed。",
+              : "Tool execution failed.",
       };
     }
   } catch {

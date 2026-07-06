@@ -64,7 +64,9 @@ import {
   consoleStepsListClass,
   consoleTableShellClass,
 } from "./console-scroll-styles";
-import { ToolFormattedResult } from "../../tool-result-format";
+import { ToolFormattedResult, ToolFailureResult } from "../../tool-result-format";
+import { parseSqlToolResult, sqlFromToolPayload } from "../../tool-result-normalize";
+import { toolResultLooksLikeError } from "../../tool-call-display";
 import {
   btnGhostClass,
   btnSecondaryClass,
@@ -1733,6 +1735,23 @@ function EventPayloadView({
       tables: Array<{ name: string; description: string; fields: string[] }>;
     };
     if (payload.tables.length === 0) {
+      if (toolCall?.result) {
+        if (toolResultLooksLikeError(toolCall.result)) {
+          return (
+            <ToolFailureResult
+              toolName={toolCall.name ?? event.toolName ?? "inspect_schema"}
+              result={toolCall.result}
+            />
+          );
+        }
+        return (
+          <ToolFormattedResult
+            toolName={toolCall.name ?? event.toolName ?? "inspect_schema"}
+            result={toolCall.result}
+            variant="console"
+          />
+        );
+      }
       return (
         <p className="text-xs leading-5 text-muted-light">
           Agent is inspecting the selected data source schema (inspect_schema).
@@ -1770,16 +1789,20 @@ function EventPayloadView({
     };
     const failed = event.activityStatus === "failed" || toolCall?.status === "failed";
     const errorMessage = payload.errorMessage;
+    const resolvedSql =
+      payload.sql ||
+      (toolCall?.result ? sqlFromToolPayload(undefined, toolCall.result) : undefined) ||
+      "";
     const datasetDetail = producedArtifacts.find(
       (artifact) => artifact.detail?.type === "dataset",
     )?.detail;
     return (
       <div className="grid gap-3">
         {payload.question && <Metric label="Question" value={payload.question} />}
-        {payload.sql ? (
+        {resolvedSql ? (
           <div className={[consoleScrollXShellClass, "min-w-0"].join(" ")}>
             <pre className={[consoleCodeBlockBaseClass, "max-h-80"].join(" ")}>
-              <code className={consoleCodeInnerClass}>{payload.sql}</code>
+              <code className={consoleCodeInnerClass}>{resolvedSql}</code>
             </pre>
           </div>
         ) : failed ? (
@@ -1791,7 +1814,7 @@ function EventPayloadView({
             Generating read-only SQL. Parameters will appear here after they arrive.
           </p>
         )}
-        {failed && errorMessage && payload.sql ? (
+        {failed && errorMessage && resolvedSql ? (
           <p className="rounded-lg bg-step-error/10 px-2.5 py-2 text-xs leading-5 text-step-error">
             {errorMessage}
           </p>
@@ -1808,6 +1831,20 @@ function EventPayloadView({
             <div className={sectionLabelClass}>Result preview</div>
             <ArtifactDetailView detail={datasetDetail} />
           </div>
+        ) : toolCall?.result && toolResultLooksLikeError(toolCall.result) ? (
+          <ToolFailureResult
+            toolName={toolCall.name ?? event.toolName ?? "run_sql_readonly"}
+            result={toolCall.result}
+          />
+        ) : toolCall?.result && parseSqlToolResult(toolCall.result) ? (
+          <div className="grid gap-2">
+            <div className={sectionLabelClass}>Result preview</div>
+            <ToolFormattedResult
+              toolName={toolCall.name ?? event.toolName ?? "run_sql_readonly"}
+              result={toolCall.result}
+              variant="console"
+            />
+          </div>
         ) : (
           <p className="rounded-lg border border-dashed border-border bg-surface-subtle px-2.5 py-2 text-[11px] leading-4 text-muted-light">
             SQL result tables are shown from linked dataset artifacts. This step has not returned preview rows yet.
@@ -1822,6 +1859,16 @@ function EventPayloadView({
   const formattedResult = toolCall?.result ?? payload.rawResult;
 
   if (toolName && formattedResult) {
+    if (toolResultLooksLikeError(formattedResult)) {
+      return (
+        <div className="grid gap-3">
+          {payload.description ? (
+            <p className="text-xs leading-5 text-muted">{payload.description}</p>
+          ) : null}
+          <ToolFailureResult toolName={toolName} result={formattedResult} />
+        </div>
+      );
+    }
     return (
       <div className="grid gap-3">
         {payload.description ? (

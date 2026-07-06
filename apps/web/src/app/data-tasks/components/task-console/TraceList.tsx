@@ -17,6 +17,8 @@ import {
   artifactToneForType,
   sectionLabelClass,
 } from "../../ui-tokens";
+import { toolResultLooksLikeError } from "../../tool-call-display";
+import { ToolFailureResult, ToolFormattedResult } from "../../tool-result-format";
 import {
   ArtifactMarkdownPreview,
   isMarkdownFilePath,
@@ -319,7 +321,24 @@ export function TraceEntryCard({
       {datasetDetail ? <CompactDatasetPreview detail={datasetDetail} /> : null}
       {fileDetail ? <CompactFilePreview detail={fileDetail} /> : null}
 
-      {entry.rawResult && !entry.sql && !datasetDetail && !fileDetail ? (
+      {entry.rawResult &&
+      !entry.sql &&
+      !datasetDetail &&
+      !fileDetail &&
+      !(entry.schemaTables && entry.schemaTables.length > 0) ? (
+        entry.toolName ? (
+          <div className="mt-3">
+            {toolResultLooksLikeError(entry.rawResult) ? (
+              <ToolFailureResult toolName={entry.toolName} result={entry.rawResult} />
+            ) : (
+              <ToolFormattedResult
+                toolName={entry.toolName}
+                result={entry.rawResult}
+                variant="console"
+              />
+            )}
+          </div>
+        ) : (
         <div className="mt-3">
           <button
             type="button"
@@ -334,6 +353,7 @@ export function TraceEntryCard({
             </pre>
           ) : null}
         </div>
+        )
       ) : null}
 
       {producedArtifacts.length > 0 ? (
