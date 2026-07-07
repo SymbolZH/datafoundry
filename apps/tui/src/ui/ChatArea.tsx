@@ -5,6 +5,7 @@ import {
   buildChatLines,
   chatContentWidth,
   countChatLines,
+  type VisualLine,
   type StartupInfo,
 } from './transcript-lines.js';
 
@@ -21,6 +22,42 @@ interface ChatAreaProps {
   scrollbackRows?: number;
   columns?: number;
   startup?: StartupInfo | undefined;
+}
+
+function messageIDFromKey(key: string): string | undefined {
+  if (!key.startsWith('m:')) return undefined;
+  const end = key.indexOf(':', 2);
+  if (end === -1) return undefined;
+  return key.slice(2, end);
+}
+
+function snapTopToNearbyMessageStart(
+  lines: VisualLine[],
+  top: number,
+  viewport: number,
+): number {
+  if (top <= 0 || top >= lines.length) return top;
+
+  const currentID = messageIDFromKey(lines[top]?.key ?? '');
+  if (!currentID) return top;
+
+  const currentKey = lines[top]?.key;
+  if (currentKey === `m:${currentID}:h` || currentKey === `m:${currentID}:after`) {
+    return top;
+  }
+
+  let start = top;
+  while (start > 0 && messageIDFromKey(lines[start - 1]?.key ?? '') === currentID) {
+    start -= 1;
+  }
+
+  if (lines[start]?.key !== `m:${currentID}:h`) return top;
+
+  // Preserve bottom anchoring for large blocks; fix the common case where the
+  // slice starts one or two rows below a message header.
+  const shift = top - start;
+  if (shift <= Math.min(2, viewport - 1)) return start;
+  return top;
 }
 
 /**
@@ -79,15 +116,27 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   } else if (total <= viewport) {
     visible = lines;
   } else {
-    const top = Math.max(0, total - viewport - safeScroll);
-    visible = lines.slice(top, top + viewport);
+    // Early sessions should not jump straight to the bottom when the startup
+    // banner is replaced by the first messages. Later sessions stay anchored to
+    // the latest row, unless that would hide a nearby message header.
+    const shouldPinEarlyConversation = messageCount <= 3 && safeScroll === 0;
+
+    if (shouldPinEarlyConversation) {
+      visible = lines.slice(0, viewport);
+    } else {
+      const rawTop = Math.max(0, total - viewport - safeScroll);
+      const top = safeScroll === 0
+        ? snapTopToNearbyMessageStart(lines, rawTop, viewport)
+        : rawTop;
+      visible = lines.slice(top, top + viewport);
+    }
   }
 
   const bottomPadding = Math.max(0, viewport - visible.length);
 
   return (
     <Box flexDirection="column" flexGrow={1} overflowY="hidden">
-      <Box height={viewport} flexDirection="column" overflowY="hidden">
+      <Box flexDirection="column" overflowY="hidden">
         {visible.map((line) => line.node)}
         {Array.from({ length: bottomPadding }, (_, index) => (
           <Text key={`pad-bottom:${index}`}> </Text>

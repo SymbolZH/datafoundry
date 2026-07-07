@@ -760,11 +760,12 @@ export const App: React.FC<AppProps> = ({
   // Handle agent query execution
   const handleAgentQuery = async (input: string) => {
     setCommandNotice(null);
-    scrollAnchor.current.jumpToLatest();
-    setChatScrollbackRows(0);
-    // Add user message to chat history
     store.addUserMessage(input);
     store.clearInputBuffer();
+    // Reset after the message enters history so the startup banner no longer
+    // contributes to the viewport slice.
+    scrollAnchor.current.jumpToLatest();
+    setChatScrollbackRows(0);
 
     // Prepare stable run input material. Retry attempts should not append
     // duplicate chat messages or send retry UI text back as model history.

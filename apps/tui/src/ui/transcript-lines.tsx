@@ -57,6 +57,8 @@ export interface BuildChatLinesInput {
 
 const INDENT = '  ';
 const INDENT_WIDTH = 2;
+const USER_MESSAGE_BORDER = '┃ ';
+const USER_MESSAGE_BORDER_WIDTH = textWidth(USER_MESSAGE_BORDER);
 const MAX_ELEMENT_LINES = 1000;
 const MAX_TABLE_ROWS = 12;
 const MIN_TABLE_CELL_WIDTH = 3;
@@ -106,6 +108,13 @@ export function buildChatLines(input: BuildChatLinesInput): VisualLine[] {
       push('empty:1', <Text key="empty:1" dimColor>Type your question and press Enter to send.</Text>);
     }
     return lines;
+  }
+
+  // Keep the first message clear of the viewport edge when it replaces the
+  // startup banner.
+  if (hasMessages) {
+    push('spacer:top:0', blankNode('spacer:top:0'));
+    push('spacer:top:1', blankNode('spacer:top:1'));
   }
 
   for (const message of input.messages) {
@@ -171,12 +180,31 @@ function pushMessageLines(
   bodyWidth: number,
   push: (key: string, node: React.ReactNode) => void,
 ): void {
+  const isUser = message.role === 'user';
   const headerKey = `m:${message.id}:h`;
-  push(headerKey, <MessageHeader key={headerKey} message={message} />);
+  const messageBodyWidth = isUser
+    ? Math.max(1, bodyWidth - USER_MESSAGE_BORDER_WIDTH)
+    : bodyWidth;
+
+  const pushLine = (key: string, node: React.ReactNode) => {
+    if (isUser) {
+      push(
+        key,
+        <Box key={`box-${key}`}>
+          <Text color="blue">{USER_MESSAGE_BORDER}</Text>
+          {node}
+        </Box>,
+      );
+    } else {
+      push(key, node);
+    }
+  };
+
+  pushLine(headerKey, <MessageHeader key={headerKey} message={message} />);
 
   if (message.elements.length === 0 && message.isStreaming) {
     const key = `m:${message.id}:thinking`;
-    push(key, <ThinkingLine key={key} />);
+    pushLine(key, <ThinkingLine key={key} />);
     return;
   }
 
@@ -188,7 +216,7 @@ function pushMessageLines(
   // uniform marginTop={1} spacing within the flat single-row line model.
   const separate = (key: string): void => {
     if (blocksEmitted > 0) {
-      push(key, blankNode(key));
+      pushLine(key, blankNode(key));
     }
   };
 
@@ -202,12 +230,12 @@ function pushMessageLines(
       }
       separate(`${keyBase}:gap`);
       blocksEmitted += 1;
-      pushMarkdownLines(normalized, bodyWidth, keyBase, (key, node) => {
+      pushMarkdownLines(normalized, messageBodyWidth, keyBase, (key, node) => {
         if (emittedLines >= MAX_ELEMENT_LINES) {
           return;
         }
         emittedLines += 1;
-        push(key, node);
+        pushLine(key, node);
       });
       return;
     }
@@ -220,7 +248,7 @@ function pushMessageLines(
     const key = `${keyBase}:tool`;
     separate(`${key}:gap`);
     blocksEmitted += 1;
-    push(
+    pushLine(
       key,
       <Box key={key} paddingLeft={INDENT_WIDTH}>
         <InlineToolCall toolCall={toolCall} showName />
@@ -230,7 +258,7 @@ function pushMessageLines(
 
   if (message.isStreaming && message.elements.length > 0) {
     const key = `m:${message.id}:cursor`;
-    push(key, <Text key={key} dimColor>{`${INDENT}▊`}</Text>);
+    pushLine(key, <Text key={key} dimColor>{`${INDENT}▊`}</Text>);
   }
 }
 
