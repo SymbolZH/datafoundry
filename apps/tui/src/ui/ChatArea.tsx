@@ -65,22 +65,29 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   const total = lines.length;
   const maxScroll = Math.max(0, total - viewport);
   const safeScroll = Math.max(0, Math.min(scrollbackRows, maxScroll));
-  const top = Math.max(0, total - viewport - safeScroll);
-  const visible = lines.slice(top, top + viewport);
-  // The startup banner should sit at the top on a fresh session. Once chat
-  // content exists, keep the newest content pinned near the input as before.
+
+  // Short conversations start at the top of the scroll viewport, matching
+  // OpenCode's session page. Once content exceeds the viewport, keep the latest
+  // rows visible unless the user has scrolled back.
   const messageCount = totalMessageCount ?? messages.length;
-  const topAlignStartup = startup !== undefined && messages.length === 0 && messageCount === 0;
-  const padCount = Math.max(0, viewport - visible.length);
-  const topPadding = topAlignStartup ? 0 : padCount;
-  const bottomPadding = topAlignStartup ? padCount : 0;
+  const hasContent = messageCount > 0;
+
+  let visible: typeof lines;
+
+  if (!hasContent) {
+    visible = lines.slice(0, viewport);
+  } else if (total <= viewport) {
+    visible = lines;
+  } else {
+    const top = Math.max(0, total - viewport - safeScroll);
+    visible = lines.slice(top, top + viewport);
+  }
+
+  const bottomPadding = Math.max(0, viewport - visible.length);
 
   return (
     <Box flexDirection="column" flexGrow={1} overflowY="hidden">
       <Box height={viewport} flexDirection="column" overflowY="hidden">
-        {Array.from({ length: topPadding }, (_, index) => (
-          <Text key={`pad:${index}`}> </Text>
-        ))}
         {visible.map((line) => line.node)}
         {Array.from({ length: bottomPadding }, (_, index) => (
           <Text key={`pad-bottom:${index}`}> </Text>

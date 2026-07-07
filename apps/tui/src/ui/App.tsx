@@ -14,6 +14,7 @@ import { HomeSplash } from './HomeSplash.js';
 import { DEFAULT_COMMANDS, getStatusBarShortcuts } from './keybindings.js';
 import { AssistantTextStreamBuffer, type AssistantTextFlush } from './assistant-stream-buffer.js';
 import { wheelScrollDelta } from '../input/mouse-wheel.js';
+import { ScrollAnchor } from './timeline/scroll-anchor.js';
 import {
   restoreSessionConversation,
   store,
@@ -233,6 +234,7 @@ export const App: React.FC<AppProps> = ({
   const [skillPickerWarning, setSkillPickerWarning] = useState<string | undefined>(undefined);
   const [retryCount, setRetryCount] = useState(0);
   const [chatScrollbackRows, setChatScrollbackRows] = useState(0);
+  const scrollAnchor = useRef(new ScrollAnchor());
   const startupResumeAttempted = useRef(false);
   const terminalRows = stdout.rows ?? 40;
   const terminalColumns = stdout.columns ?? 100;
@@ -246,6 +248,7 @@ export const App: React.FC<AppProps> = ({
     directory,
   };
   const visibleMessages = state.messages;
+  const transcriptStartup = state.messages.length === 0 ? startup : undefined;
   const chatViewportRowCount = chatViewportRows(terminalRows, {
     commandNotice: Boolean(commandNotice),
     activeTab,
@@ -256,7 +259,7 @@ export const App: React.FC<AppProps> = ({
     toolCalls: state.toolCalls,
     totalMessageCount: state.messages.length,
     columns: terminalColumns,
-    startup,
+    startup: transcriptStartup,
   });
   const maxChatScrollbackRows = Math.max(0, chatContentRows - chatViewportRowCount);
   const pickerOpen = sessionPickerOpen || skillPickerOpen;
@@ -283,7 +286,16 @@ export const App: React.FC<AppProps> = ({
 
   const scrollChatBy = (delta: number): void => {
     if (activeTab !== 'chat' || delta === 0) return;
-    setChatScrollbackRows((current) => clampChatScrollback(current + delta));
+    setChatScrollbackRows((current) => {
+      const next = clampChatScrollback(current + delta);
+      scrollAnchor.current.handleUserScroll(next);
+      return next;
+    });
+  };
+
+  const jumpToLatest = (): void => {
+    scrollAnchor.current.jumpToLatest();
+    setChatScrollbackRows(0);
   };
 
   // Subscribe to state changes
@@ -323,8 +335,11 @@ export const App: React.FC<AppProps> = ({
   }, [configClient, state.workspaceConfig.skill, activeSkillId]);
 
   useEffect(() => {
-    setChatScrollbackRows((current) => Math.max(0, Math.min(maxChatScrollbackRows, current)));
-  }, [maxChatScrollbackRows]);
+    setChatScrollbackRows((current) => {
+      const adjustedScrollback = scrollAnchor.current.handleContentGrowth(chatContentRows, current);
+      return clampChatScrollback(adjustedScrollback);
+    });
+  }, [chatContentRows, maxChatScrollbackRows]);
 
   useEffect(() => {
     const onData = (chunk: Buffer | string) => {
@@ -404,6 +419,7 @@ export const App: React.FC<AppProps> = ({
       const conversation = await configClient.getSessionConversation(sessionId);
       const restored = restoreSessionConversation(conversation);
       store.restoreSession(restored);
+      scrollAnchor.current.reset();
       setActiveTab('chat');
       setChatScrollbackRows(0);
       setCommandNotice({
@@ -600,18 +616,20 @@ export const App: React.FC<AppProps> = ({
     }
 
     if (activeTab === 'chat' && key.home) {
+      scrollAnchor.current.handleUserScroll(maxChatScrollbackRows);
       setChatScrollbackRows(maxChatScrollbackRows);
       return;
     }
 
     if (activeTab === 'chat' && key.end) {
-      setChatScrollbackRows(0);
+      jumpToLatest();
       return;
     }
 
     // Ctrl+L - Clear screen (reset chat messages)
     if (key.ctrl && input === 'l') {
       store.clearMessages();
+      scrollAnchor.current.reset();
       setChatScrollbackRows(0);
       return;
     }
@@ -619,6 +637,7 @@ export const App: React.FC<AppProps> = ({
     // Ctrl+N - New session (reset and create new thread)
     if (key.ctrl && input === 'n') {
       store.startNewSession(createThreadId());
+      scrollAnchor.current.reset();
       setActiveTab('chat');
       setChatScrollbackRows(0);
       return;
@@ -681,9 +700,11 @@ export const App: React.FC<AppProps> = ({
 
           if (action === 'clear_history') {
             store.clearMessages();
+            scrollAnchor.current.reset();
             setChatScrollbackRows(0);
           } else if (action === 'reset_session') {
             store.startNewSession(createThreadId());
+            scrollAnchor.current.reset();
             setActiveTab('chat');
             setChatScrollbackRows(0);
           } else if (action === 'exit_application') {
@@ -739,6 +760,7 @@ export const App: React.FC<AppProps> = ({
   // Handle agent query execution
   const handleAgentQuery = async (input: string) => {
     setCommandNotice(null);
+    scrollAnchor.current.jumpToLatest();
     setChatScrollbackRows(0);
     // Add user message to chat history
     store.addUserMessage(input);
@@ -1192,7 +1214,7 @@ export const App: React.FC<AppProps> = ({
                         viewportRows={chatViewportRowCount}
                         scrollbackRows={chatScrollbackRows}
                         columns={terminalColumns}
-                        startup={startup}
+                        startup={transcriptStartup}
                       />
                     </Box>
 
