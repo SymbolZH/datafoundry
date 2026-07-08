@@ -186,6 +186,10 @@ function pushMessageLines(
     ? Math.max(1, bodyWidth - USER_MESSAGE_BORDER_WIDTH)
     : bodyWidth;
 
+  // pushLine wraps content with visual decorations to maintain alignment:
+  // - User messages: blue border (┃ ) is added to the left of all content
+  // - Agent messages: equivalent whitespace padding is added to align with User messages
+  // This ensures both message types start at the same column position.
   const pushLine = (key: string, node: React.ReactNode) => {
     if (isUser) {
       push(
@@ -196,7 +200,14 @@ function pushMessageLines(
         </Box>,
       );
     } else {
-      push(key, node);
+      // Agent messages need left padding to align with User messages that have border
+      push(
+        key,
+        <Box key={`box-${key}`}>
+          <Text>{' '.repeat(USER_MESSAGE_BORDER_WIDTH)}</Text>
+          {node}
+        </Box>,
+      );
     }
   };
 
@@ -774,13 +785,16 @@ interface MessageHeaderProps {
   message: DisplayMessage;
 }
 
-const MessageHeader: React.FC<MessageHeaderProps> = ({ message }) => (
-  <Text>
-    <Text bold color={roleColor(message.role)}>{roleLabel(message.role)}</Text>
-    <Text dimColor> • {formatTimestamp(message.timestamp)}</Text>
-    {message.isStreaming ? <Text dimColor> • working...</Text> : null}
-  </Text>
-);
+const MessageHeader: React.FC<MessageHeaderProps> = ({ message }) => {
+  return (
+    <Text>
+      {INDENT}
+      <Text bold color={roleColor(message.role)}>{roleLabel(message.role)}</Text>
+      <Text dimColor> • {formatTimestamp(message.timestamp)}</Text>
+      {message.isStreaming ? <Text dimColor> • working...</Text> : null}
+    </Text>
+  );
+};
 
 const ThinkingLine: React.FC = () => {
   const [tick, setTick] = useState(0);
