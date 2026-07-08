@@ -5,7 +5,7 @@ import { StatusFooter } from './Header.js';
 import { ChatArea, countChatLines } from './ChatArea.js';
 import { OutputsView } from './OutputsView.js';
 import { ActivityPanel } from './ActivityPanel.js';
-import { InputBox } from './InputBox.js';
+import { EnhancedInputBox } from './components/EnhancedInputBox.js';
 import { WorkspaceFrame, chatViewportRows } from './workspace-layout.js';
 import { KeybindingsHelp } from './KeybindingsHelp.js';
 import { SessionPicker } from './SessionPicker.js';
@@ -600,6 +600,19 @@ export const App: React.FC<AppProps> = ({
     }
   }
 
+  const clearScreen = (): void => {
+    store.clearMessages();
+    scrollAnchor.current.reset();
+    setChatScrollbackRows(0);
+  };
+
+  const startNewSession = (): void => {
+    store.startNewSession(createThreadId());
+    scrollAnchor.current.reset();
+    setActiveTab('chat');
+    setChatScrollbackRows(0);
+  };
+
   // Handle global keyboard shortcuts
   useInput((input, key) => {
     // Ignore input when typing in the input box
@@ -628,18 +641,13 @@ export const App: React.FC<AppProps> = ({
 
     // Ctrl+L - Clear screen (reset chat messages)
     if (key.ctrl && input === 'l') {
-      store.clearMessages();
-      scrollAnchor.current.reset();
-      setChatScrollbackRows(0);
+      clearScreen();
       return;
     }
 
     // Ctrl+N - New session (reset and create new thread)
     if (key.ctrl && input === 'n') {
-      store.startNewSession(createThreadId());
-      scrollAnchor.current.reset();
-      setActiveTab('chat');
-      setChatScrollbackRows(0);
+      startNewSession();
       return;
     }
 
@@ -1185,15 +1193,19 @@ export const App: React.FC<AppProps> = ({
                       rows={Math.max(12, terminalRows - 1)}
                       columns={terminalColumns}
                       startup={startup}
-                      input={(
-                        <InputBox
+                      input={(promptWidth) => (
+                        <EnhancedInputBox
                           onChange={handleInputChange}
                           onSubmit={handleSubmit}
+                          onFocusChange={setInputFocused}
+                          onClearScreen={clearScreen}
+                          onNewSession={startNewSession}
                           disabled={state.connectionStatus !== 'connected' || state.runStatus === 'running'}
                           commands={inputCommands}
                           modelName={modelName}
                           datasourceId={activeDatasourceId}
                           skillId={activeSkillId}
+                          inputWidth={promptWidth}
                         />
                       )}
                     />
@@ -1273,14 +1285,18 @@ export const App: React.FC<AppProps> = ({
               )}
 
               {!isHomeScreen && (
-                <InputBox
+                <EnhancedInputBox
                   onChange={handleInputChange}
                   onSubmit={handleSubmit}
+                  onFocusChange={setInputFocused}
+                  onClearScreen={clearScreen}
+                  onNewSession={startNewSession}
                   disabled={state.connectionStatus !== 'connected' || state.runStatus === 'running'}
                   commands={inputCommands}
                   modelName={modelName}
                   datasourceId={activeDatasourceId}
                   skillId={activeSkillId}
+                  inputWidth={terminalColumns}
                 />
               )}
 
