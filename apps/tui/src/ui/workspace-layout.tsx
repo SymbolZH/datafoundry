@@ -1,18 +1,26 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 
+export type WorkspaceTab = 'chat' | 'stats' | 'config' | 'outputs';
+
 export function WorkspaceFrame({
   rows,
+  columns,
+  scrollableRows,
   scrollable,
   bottom,
 }: {
   rows: number;
+  columns: number;
+  scrollableRows: number;
   scrollable: React.ReactNode;
   bottom: React.ReactNode;
 }) {
+  const safeColumns = Math.max(1, Math.floor(columns));
+
   if (rows < 20) {
     return (
-      <Box flexDirection="column" minHeight={rows}>
+      <Box flexDirection="column" height={rows} width={safeColumns}>
         <Box paddingX={1} flexDirection="column">
           <Text color="yellow" bold>Terminal too small</Text>
           <Text color="gray">Resize to at least 80x20 for the DataFoundry TUI.</Text>
@@ -22,24 +30,40 @@ export function WorkspaceFrame({
   }
 
   return (
-    <Box flexDirection="column" minHeight={rows}>
-      <Box flexGrow={1} overflowY="hidden" flexDirection="column">
+    <Box flexDirection="column" height={rows} width={safeColumns}>
+      <Box
+        height={Math.max(0, Math.floor(scrollableRows))}
+        width={safeColumns}
+        overflowY="hidden"
+        flexDirection="column"
+        flexShrink={0}
+      >
         {scrollable}
       </Box>
-      <Box flexShrink={0} flexDirection="column">
+      <Box width={safeColumns} flexShrink={0} flexDirection="column">
         {bottom}
       </Box>
     </Box>
   );
 }
 
+export function estimateBottomRows(
+  options: { commandNotice: boolean; activeTab: WorkspaceTab; homeScreen?: boolean },
+): number {
+  if (options.homeScreen) {
+    return 1;
+  }
+
+  if (options.activeTab === 'chat') {
+    return options.commandNotice ? 6 : 5;
+  }
+  return options.commandNotice ? 9 : 8;
+}
+
 /** Rows available for chat transcript inside the scrollable slot. */
 export function chatViewportRows(
   terminalRows: number,
-  options: { commandNotice: boolean; activeTab: 'chat' | 'stats' | 'config' | 'outputs' },
+  bottomRows: number,
 ): number {
-  const bottomRows = options.activeTab === 'chat'
-    ? (options.commandNotice ? 5 : 4)
-    : (options.commandNotice ? 9 : 8);
-  return Math.max(5, terminalRows - bottomRows);
+  return Math.max(0, terminalRows - Math.max(0, Math.floor(bottomRows)));
 }

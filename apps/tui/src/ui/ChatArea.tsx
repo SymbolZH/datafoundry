@@ -84,7 +84,7 @@ const ChatAreaComponent = forwardRef<ChatAreaRef, ChatAreaProps>(({
     startup,
   ]);
 
-  const viewport = viewportRows === undefined ? undefined : Math.max(1, viewportRows);
+  const viewport = viewportRows === undefined ? undefined : Math.max(0, viewportRows);
   const total = lines.length;
   const maxScroll = viewport === undefined ? 0 : Math.max(0, total - viewport);
   const controlled = scrollbackRows !== undefined;
@@ -173,7 +173,12 @@ const ChatAreaComponent = forwardRef<ChatAreaRef, ChatAreaProps>(({
   const bottomPadding = Math.max(0, resolvedViewport - visible.length);
 
   return (
-    <Box flexDirection="column" flexGrow={1} overflowY="hidden">
+    <Box
+      flexDirection="column"
+      height={resolvedViewport}
+      flexShrink={0}
+      overflowY="hidden"
+    >
       <Box flexDirection="column" overflowY="hidden">
         {visible.map((line) => line.node)}
         {Array.from({ length: bottomPadding }, (_, index) => (

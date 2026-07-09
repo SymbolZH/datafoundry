@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Box, Text, useInput, useStdin, useStdout, type Key } from 'ink';
 import { isMouseInput } from '../../input/mouse-wheel.js';
 import { CommandCompletion, CommandHistory, DEFAULT_COMMANDS } from '../keybindings.js';
@@ -11,6 +11,7 @@ interface EnhancedInputBoxProps {
   onFocusChange?: (focused: boolean) => void;
   onClearScreen?: () => void;
   onNewSession?: () => void;
+  onLayoutChange?: () => void;
   disabled?: boolean;
   commands?: string[];
   placeholder?: string | undefined;
@@ -73,6 +74,7 @@ export const EnhancedInputBox: React.FC<EnhancedInputBoxProps> = ({
   onFocusChange,
   onClearScreen,
   onNewSession,
+  onLayoutChange,
   disabled = false,
   commands = DEFAULT_COMMANDS,
   placeholder = 'Ask about your data... "Show tables"',
@@ -492,6 +494,18 @@ export const EnhancedInputBox: React.FC<EnhancedInputBoxProps> = ({
   const relativeCursorRow = cursorVisualRow - buffer.visualScrollOffset;
   const placeholderFirst = cpSlice(placeholder, 0, 1);
   const placeholderRest = cpSlice(placeholder, 1);
+  const renderedInputRows = buffer.text.length === 0 ? 1 : lines.length;
+  const layoutSignature = [
+    renderedInputRows,
+    completionHint ? 1 : 0,
+    disabled ? 1 : 0,
+    visualWidth,
+    metaParts.join('\u0000'),
+  ].join(':');
+
+  useLayoutEffect(() => {
+    onLayoutChange?.();
+  }, [layoutSignature, onLayoutChange]);
 
   const renderInputLine = (lineText: string, index: number) => {
     const displayText = lineText || ' ';

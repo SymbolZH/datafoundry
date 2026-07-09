@@ -2,9 +2,39 @@ import React from 'react';
 import { Box, Text } from 'ink';
 import type { LiveToolCallRecord } from '../state/index.js';
 
+const RUNNING_TOOL_FRAME_MS = 250;
+const RUNNING_TOOL_FRAMES = ['◐', '◓', '◑', '◒'] as const;
+
 interface InlineToolCallProps {
   toolCall: LiveToolCallRecord;
   showName?: boolean;
+}
+
+function formatElapsedDuration(elapsedMs: number, status: LiveToolCallRecord['status']): string {
+  const safeElapsedMs = Math.max(0, elapsedMs);
+
+  if (status === 'running') {
+    const totalSeconds = Math.floor(safeElapsedMs / 1000);
+    if (totalSeconds < 60) {
+      return `${totalSeconds}s`;
+    }
+
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}m ${seconds}s`;
+  }
+
+  if (safeElapsedMs < 1000) {
+    return `${Math.round(safeElapsedMs)}ms`;
+  }
+
+  if (safeElapsedMs < 60000) {
+    return `${(safeElapsedMs / 1000).toFixed(1)}s`;
+  }
+
+  const minutes = Math.floor(safeElapsedMs / 60000);
+  const seconds = Math.floor((safeElapsedMs % 60000) / 1000);
+  return `${minutes}m ${seconds}s`;
 }
 
 /**
@@ -15,6 +45,25 @@ export const InlineToolCall: React.FC<InlineToolCallProps> = ({
   toolCall,
   showName = true,
 }) => {
+  const [nowMs, setNowMs] = React.useState(() => Date.now());
+  const [frameIndex, setFrameIndex] = React.useState(0);
+
+  React.useEffect(() => {
+    if (toolCall.status !== 'running' || !toolCall.startedAtMs) {
+      setFrameIndex(0);
+      return;
+    }
+
+    setNowMs(Date.now());
+    setFrameIndex((index) => (index + 1) % RUNNING_TOOL_FRAMES.length);
+    const interval = setInterval(() => {
+      setNowMs(Date.now());
+      setFrameIndex((index) => (index + 1) % RUNNING_TOOL_FRAMES.length);
+    }, RUNNING_TOOL_FRAME_MS);
+
+    return () => clearInterval(interval);
+  }, [toolCall.status, toolCall.startedAtMs]);
+
   const getToolDisplayName = (name: string): string => {
     const displayNames: Record<string, string> = {
       'run_sql_readonly': 'Execute SQL',
@@ -29,7 +78,7 @@ export const InlineToolCall: React.FC<InlineToolCallProps> = ({
   const getStatusIcon = (status: LiveToolCallRecord['status']): string => {
     switch (status) {
       case 'running':
-        return '●';
+        return RUNNING_TOOL_FRAMES[frameIndex];
       case 'success':
         return '✓';
       case 'failed':
@@ -56,19 +105,11 @@ export const InlineToolCall: React.FC<InlineToolCallProps> = ({
     if (!toolCall.startedAtMs) return '';
 
     const endTime = toolCall.finishedAtMs ?? (
-      toolCall.status === 'running' ? Date.now() : toolCall.startedAtMs
+      toolCall.status === 'running' ? nowMs : toolCall.startedAtMs
     );
     const elapsedMs = endTime - toolCall.startedAtMs;
 
-    if (elapsedMs < 1000) {
-      return `${elapsedMs}ms`;
-    } else if (elapsedMs < 60000) {
-      return `${(elapsedMs / 1000).toFixed(1)}s`;
-    } else {
-      const minutes = Math.floor(elapsedMs / 60000);
-      const seconds = Math.floor((elapsedMs % 60000) / 1000);
-      return `${minutes}m ${seconds}s`;
-    }
+    return formatElapsedDuration(elapsedMs, toolCall.status);
   };
 
   const icon = getStatusIcon(toolCall.status);

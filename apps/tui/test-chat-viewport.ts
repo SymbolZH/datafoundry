@@ -9,7 +9,7 @@
  */
 import { buildChatLines, countChatLines, chatContentWidth } from './dist/ui/transcript-lines.js';
 import { textWidth, wrapToWidth, truncateToWidth } from './dist/ui/text-width.js';
-import { chatViewportRows } from './dist/ui/workspace-layout.js';
+import { chatViewportRows, estimateBottomRows } from './dist/ui/workspace-layout.js';
 import {
   createWheelScrollDecoder,
   wheelScrollDelta,
@@ -107,10 +107,14 @@ check(eq(wrapToWidth('hello world', 5), ['hello', 'world']), 'wrap breaks at spa
 check(wrapToWidth('', 10).length === 1, 'empty line still yields one row');
 check(textWidth(truncateToWidth('中文测试内容很长', 5)) <= 5, 'truncate fits within width');
 
-// --- layout constants (unchanged) ---
+// --- layout helpers ---
 check(chatContentWidth(120) === 116, 'content width is columns - 4');
-check(chatViewportRows(40, { commandNotice: false, activeTab: 'chat' }) === 36, 'chat viewport for 40 rows is 36');
-check(chatViewportRows(40, { commandNotice: true, activeTab: 'chat' }) === 35, 'chat viewport with notice is 35');
+check(estimateBottomRows({ commandNotice: false, activeTab: 'chat' }) === 5, 'chat bottom estimate matches empty enhanced input height');
+check(estimateBottomRows({ commandNotice: true, activeTab: 'chat' }) === 6, 'chat bottom estimate includes command notice');
+check(estimateBottomRows({ commandNotice: false, activeTab: 'chat', homeScreen: true }) === 1, 'home bottom estimate only reserves status footer');
+check(chatViewportRows(40, 5) === 35, 'chat viewport subtracts measured bottom rows');
+check(chatViewportRows(40, 9) === 31, 'chat viewport shrinks when measured input grows');
+check(chatViewportRows(8, 12) === 0, 'chat viewport can collapse instead of overlapping bottom controls');
 
 // --- mouse wheel parsing ---
 const ESC = '\u001B';

@@ -169,10 +169,17 @@ class StateStore {
       return;
     }
 
-    const previousToolCallIds = new Set(this.state.toolCalls.map((toolCall) => toolCall.id));
+    const previousToolCallsById = new Map(
+      this.state.toolCalls.map((toolCall) => [toolCall.id, toolCall]),
+    );
+    const previousToolCallIds = new Set(previousToolCallsById.keys());
     const newToolCallIds = newLiveRun.toolCalls
       .filter((toolCall) => !previousToolCallIds.has(toolCall.id))
       .map((toolCall) => toolCall.id);
+    const hasNewRunningToolCall = newLiveRun.toolCalls.some((toolCall) => {
+      const previous = previousToolCallsById.get(toolCall.id);
+      return toolCall.status === "running" && previous?.status !== "running";
+    });
     let stateWithNewToolCalls: TuiAppState = this.state;
     for (const toolCallId of newToolCallIds) {
       stateWithNewToolCalls = insertToolCallIntoLastMessage(
@@ -203,7 +210,7 @@ class StateStore {
       sessionStats: newSessionStats,
     };
 
-    this.setState(newState);
+    this.setState(newState, hasNewRunningToolCall);
   }
 
   /**
