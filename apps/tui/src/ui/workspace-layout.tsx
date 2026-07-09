@@ -47,23 +47,36 @@ export function WorkspaceFrame({
   );
 }
 
-export function estimateBottomRows(
-  options: { commandNotice: boolean; activeTab: WorkspaceTab; homeScreen?: boolean },
+export function estimateControlsRows(
+  options: {
+    commandNotice: boolean;
+    activeTab: WorkspaceTab;
+    homeScreen?: boolean;
+    inputBoxRows?: number | undefined;
+  },
 ): number {
   if (options.homeScreen) {
     return 1;
   }
 
+  const inputBoxRows = Math.max(5, Math.ceil(options.inputBoxRows ?? 5));
+
   if (options.activeTab === 'chat') {
-    return options.commandNotice ? 6 : 5;
+    return inputBoxRows + (options.commandNotice ? 1 : 0);
   }
-  return options.commandNotice ? 9 : 8;
+  return inputBoxRows + (options.commandNotice ? 4 : 3);
+}
+
+/** Backward-compatible alias for older viewport tests/helpers. */
+export const estimateBottomRows = estimateControlsRows;
+
+/** Rows available for the main content after reserving the measured controls. */
+export function availableContentRows(
+  terminalRows: number,
+  controlsRows: number,
+): number {
+  return Math.max(0, terminalRows - Math.max(0, Math.ceil(controlsRows)));
 }
 
 /** Rows available for chat transcript inside the scrollable slot. */
-export function chatViewportRows(
-  terminalRows: number,
-  bottomRows: number,
-): number {
-  return Math.max(0, terminalRows - Math.max(0, Math.floor(bottomRows)));
-}
+export const chatViewportRows = availableContentRows;

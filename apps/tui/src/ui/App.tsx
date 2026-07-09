@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
-import { Box, Text, useApp, useInput, useStdin, useStdout, measureElement, type DOMElement } from 'ink';
+import { Box, Text, useApp, useInput, useStdin, measureElement, type DOMElement } from 'ink';
 import { randomUUID } from 'node:crypto';
 import { StatusFooter } from './Header.js';
 import { ChatArea, type ChatAreaRef } from './ChatArea.js';
 import { OutputsView } from './OutputsView.js';
 import { ActivityPanel } from './ActivityPanel.js';
 import { EnhancedInputBox } from './components/EnhancedInputBox.js';
-import { WorkspaceFrame, chatViewportRows, estimateBottomRows } from './workspace-layout.js';
+import { WorkspaceFrame, availableContentRows, estimateControlsRows } from './workspace-layout.js';
+import { useTerminalSize } from './use-terminal-size.js';
 import { KeybindingsHelp } from './KeybindingsHelp.js';
 import { SessionPicker } from './SessionPicker.js';
 import { ResourcePicker, type ResourcePickerItem } from './ResourcePicker.js';
@@ -45,11 +46,6 @@ type CommandNotice = {
   message: string;
   kind: 'info' | 'error';
 };
-type BottomMeasurement = {
-  key: string;
-  rows: number;
-};
-
 const SCROLL_FRAME_MS = 16;
 const SCROLL_ROWS_PER_FRAME = 3;
 const MAX_PENDING_SCROLL_ROWS = 120;
@@ -216,7 +212,7 @@ export const App: React.FC<AppProps> = ({
 }) => {
   const { exit } = useApp();
   const { stdin } = useStdin();
-  const { stdout } = useStdout();
+  const { columns: terminalColumns, rows: terminalRows } = useTerminalSize();
   const [state, setState] = useState<TuiAppState>(store.getState());
   const [activeTab, setActiveTab] = useState<TabType>('chat');
   const [inputFocused, setInputFocused] = useState(false);
@@ -241,15 +237,13 @@ export const App: React.FC<AppProps> = ({
   const [skillPickerError, setSkillPickerError] = useState<string | undefined>(undefined);
   const [skillPickerWarning, setSkillPickerWarning] = useState<string | undefined>(undefined);
   const [retryCount, setRetryCount] = useState(0);
-  const [measuredBottom, setMeasuredBottom] = useState<BottomMeasurement | null>(null);
-  const [, setBottomLayoutVersion] = useState(0);
+  const [controlsHeight, setControlsHeight] = useState(0);
+  const [reportedInputBoxRows, setReportedInputBoxRows] = useState<number | null>(null);
   const chatAreaRef = useRef<ChatAreaRef>(null);
-  const bottomControlsRef = useRef<DOMElement | null>(null);
+  const mainControlsRef = useRef<DOMElement | null>(null);
   const activeTabRef = useRef(activeTab);
   const applyChatScrollDeltaRef = useRef<(delta: number) => void>(() => {});
   const startupResumeAttempted = useRef(false);
-  const terminalRows = stdout.rows ?? 40;
-  const terminalColumns = stdout.columns ?? 100;
   const modelName = resolveModelName(state);
   const directory = formatDirectory(process.env.PWD || process.cwd());
   const startup = {
@@ -273,25 +267,31 @@ export const App: React.FC<AppProps> = ({
     && !isRestoringSession
     ? startup
     : undefined;
-  const bottomLayoutKey = [
+  const pickerOpen = sessionPickerOpen || skillPickerOpen;
+  const controlsLayoutKey = [
     activeTab,
     isHomeScreen ? 'home' : 'workspace',
-    commandNotice ? 'notice' : 'clean',
-  ].join(':');
-  const measuredBottomRows = measuredBottom?.key === bottomLayoutKey
-    ? measuredBottom.rows
-    : null;
-  const estimatedBottomRowCount = estimateBottomRows({
+    pickerOpen ? 'picker-open' : 'picker-closed',
+    commandNotice ? `${commandNotice.kind}:${commandNotice.message}` : 'clean',
+    terminalColumns,
+    terminalRows,
+    reportedInputBoxRows ?? 'input-unknown',
+    state.connectionStatus,
+    state.runStatus,
+    modelName,
+    directory,
+    activeDatasourceId ?? 'no-datasource',
+    activeSkillId ?? 'no-skill',
+  ].join('\u0000');
+  const estimatedControlsRowCount = estimateControlsRows({
     commandNotice: Boolean(commandNotice),
     activeTab,
     homeScreen: isHomeScreen,
+    inputBoxRows: reportedInputBoxRows ?? undefined,
   });
-  const bottomRowCountForViewport = isHomeScreen
-    ? measuredBottomRows ?? estimatedBottomRowCount
-    : Math.max(estimatedBottomRowCount, measuredBottomRows ?? 0);
-  const scrollableRowCount = chatViewportRows(terminalRows, bottomRowCountForViewport);
+  const controlsRowCountForViewport = Math.max(estimatedControlsRowCount, controlsHeight);
+  const scrollableRowCount = availableContentRows(terminalRows, controlsRowCountForViewport);
   const chatViewportRowCount = scrollableRowCount;
-  const pickerOpen = sessionPickerOpen || skillPickerOpen;
   const agentResponding = state.runStatus === 'running' && state.agentResponseComplete !== true;
   const latestMessage = visibleMessages[visibleMessages.length - 1];
   const assistantReplying = latestMessage?.role === 'assistant' && latestMessage.isStreaming === true;
@@ -307,21 +307,25 @@ export const App: React.FC<AppProps> = ({
     [skillShortcutItems],
   );
 
-  const requestBottomMeasurement = useCallback(() => {
-    setBottomLayoutVersion((version) => (version + 1) % 1_000_000);
+  const requestControlsMeasurement = useCallback((inputBoxRows?: number) => {
+    if (typeof inputBoxRows === 'number') {
+      const nextRows = Math.max(0, Math.ceil(inputBoxRows));
+      setReportedInputBoxRows((current) => (
+        current === nextRows ? current : nextRows
+      ));
+    }
   }, []);
 
   useLayoutEffect(() => {
-    const bottomNode = bottomControlsRef.current;
-    if (!bottomNode) return;
+    const controlsNode = mainControlsRef.current;
+    if (!controlsNode) {
+      setControlsHeight((current) => (current === 0 ? current : 0));
+      return;
+    }
 
-    const nextRows = Math.max(0, Math.ceil(measureElement(bottomNode).height));
-    setMeasuredBottom((current) => (
-      current?.key === bottomLayoutKey && current.rows === nextRows
-        ? current
-        : { key: bottomLayoutKey, rows: nextRows }
-    ));
-  });
+    const nextRows = Math.max(0, Math.ceil(measureElement(controlsNode).height));
+    setControlsHeight((current) => (current === nextRows ? current : nextRows));
+  }, [controlsLayoutKey]);
 
   useEffect(() => {
     if (!activeDatasourceId) {
@@ -1402,7 +1406,7 @@ export const App: React.FC<AppProps> = ({
             </Box>
           }
           bottom={
-            <Box ref={bottomControlsRef} flexDirection="column" flexShrink={0}>
+            <Box ref={mainControlsRef} flexDirection="column" flexShrink={0}>
               {activeTab !== 'chat' && renderStatusBar()}
 
               {commandNotice && (
@@ -1426,7 +1430,7 @@ export const App: React.FC<AppProps> = ({
                   onFocusChange={setInputFocused}
                   onClearScreen={clearScreen}
                   onNewSession={startNewSession}
-                  onLayoutChange={requestBottomMeasurement}
+                  onLayoutChange={requestControlsMeasurement}
                   disabled={inputDisabled}
                   commands={inputCommands}
                   modelName={modelName}

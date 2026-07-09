@@ -11,7 +11,7 @@ interface EnhancedInputBoxProps {
   onFocusChange?: (focused: boolean) => void;
   onClearScreen?: () => void;
   onNewSession?: () => void;
-  onLayoutChange?: () => void;
+  onLayoutChange?: (rows: number) => void;
   disabled?: boolean;
   commands?: string[];
   placeholder?: string | undefined;
@@ -24,6 +24,11 @@ interface EnhancedInputBoxProps {
 const INPUT_VIEWPORT_HEIGHT = 5;
 const LARGE_PASTE_CHAR_THRESHOLD = 1000;
 const LARGE_PASTE_LINE_THRESHOLD = 10;
+
+function inputBoxRowsFor(renderedInputRows: number, hasCompletionHint: boolean): number {
+  // paddingY top/bottom + the metadata row's top padding/content.
+  return Math.max(1, renderedInputRows) + (hasCompletionHint ? 2 : 0) + 4;
+}
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -111,10 +116,23 @@ export const EnhancedInputBox: React.FC<EnhancedInputBoxProps> = ({
     forceRender((version) => version + 1);
   }, []);
 
+  const lastReportedLayoutRows = useRef<number | null>(null);
+  const reportLayoutRows = useCallback((rows: number) => {
+    if (lastReportedLayoutRows.current === rows) return;
+    lastReportedLayoutRows.current = rows;
+    onLayoutChange?.(rows);
+  }, [onLayoutChange]);
+
+  const currentLayoutRows = useCallback(() => {
+    const inputRows = buffer.text.length === 0 ? 1 : buffer.viewportVisualLines.length;
+    return inputBoxRowsFor(inputRows, !disabled && completionHint.length > 0);
+  }, [buffer, completionHint, disabled]);
+
   const syncChange = useCallback(() => {
     onChange(buffer.text);
+    reportLayoutRows(currentLayoutRows());
     redraw();
-  }, [buffer, onChange, redraw]);
+  }, [buffer, currentLayoutRows, onChange, redraw, reportLayoutRows]);
 
   const setPendingPaste = useCallback((placeholderText: string, pasted: string) => {
     pendingPastesRef.current.set(placeholderText, pasted);
@@ -207,17 +225,19 @@ export const EnhancedInputBox: React.FC<EnhancedInputBoxProps> = ({
     setCompletionHint('');
     buffer.setText('');
     onChange('');
+    reportLayoutRows(inputBoxRowsFor(1, false));
     redraw();
     onSubmit(finalValue);
-  }, [buffer, clearPendingPastes, disabled, expandPendingPastes, onChange, onSubmit, redraw]);
+  }, [buffer, clearPendingPastes, disabled, expandPendingPastes, onChange, onSubmit, redraw, reportLayoutRows]);
 
   const clearBuffer = useCallback(() => {
     buffer.setText('');
     clearPendingPastes();
     resetCompletion();
     onChange('');
+    reportLayoutRows(inputBoxRowsFor(1, false));
     redraw();
-  }, [buffer, clearPendingPastes, onChange, redraw, resetCompletion]);
+  }, [buffer, clearPendingPastes, onChange, redraw, reportLayoutRows, resetCompletion]);
 
   const handlePaste = useCallback(
     (input: string) => {
@@ -276,9 +296,13 @@ export const EnhancedInputBox: React.FC<EnhancedInputBoxProps> = ({
       clearPendingPastes();
       resetCompletion();
       onChange(buffer.text);
+      reportLayoutRows(inputBoxRowsFor(
+        buffer.text.length === 0 ? 1 : buffer.viewportVisualLines.length,
+        false,
+      ));
       redraw();
     },
-    [buffer, clearPendingPastes, onChange, redraw, resetCompletion],
+    [buffer, clearPendingPastes, onChange, redraw, reportLayoutRows, resetCompletion],
   );
 
   useEffect(() => {
@@ -468,6 +492,10 @@ export const EnhancedInputBox: React.FC<EnhancedInputBoxProps> = ({
         if (completion !== null) {
           buffer.setText(completion);
           onChange(buffer.text);
+          reportLayoutRows(inputBoxRowsFor(
+            buffer.text.length === 0 ? 1 : buffer.viewportVisualLines.length,
+            false,
+          ));
           redraw();
           setCompletionHint('');
         } else {
@@ -495,17 +523,16 @@ export const EnhancedInputBox: React.FC<EnhancedInputBoxProps> = ({
   const placeholderFirst = cpSlice(placeholder, 0, 1);
   const placeholderRest = cpSlice(placeholder, 1);
   const renderedInputRows = buffer.text.length === 0 ? 1 : lines.length;
+  const layoutRows = inputBoxRowsFor(renderedInputRows, !disabled && completionHint.length > 0);
   const layoutSignature = [
-    renderedInputRows,
-    completionHint ? 1 : 0,
-    disabled ? 1 : 0,
+    layoutRows,
     visualWidth,
     metaParts.join('\u0000'),
   ].join(':');
 
   useLayoutEffect(() => {
-    onLayoutChange?.();
-  }, [layoutSignature, onLayoutChange]);
+    reportLayoutRows(layoutRows);
+  }, [layoutRows, layoutSignature, reportLayoutRows]);
 
   const renderInputLine = (lineText: string, index: number) => {
     const displayText = lineText || ' ';
