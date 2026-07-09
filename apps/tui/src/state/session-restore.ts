@@ -254,15 +254,16 @@ function conversationToolCallToLiveRecord(toolCall: ConversationToolCall): LiveT
     ? "success"
     : toolCall.status === "failed"
       ? "failed"
-      : "running";
+      : "pending";
   const result = serializeToolCallResult(toolCall);
   const record: LiveToolCallRecord = {
     id: toolCall.toolCallId,
     name: toolCall.toolName ?? toolCall.name ?? "tool",
     status,
+    runId: toolCall.runId,
     startedAtMs: now,
   };
-  if (status !== "running") {
+  if (status !== "pending") {
     record.finishedAtMs = now;
   }
   if (result !== undefined) {

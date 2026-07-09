@@ -55,6 +55,8 @@ export interface BuildChatLinesInput {
   startup?: StartupInfo | undefined;
 }
 
+type ToolCallElement = Extract<DisplayMessage["elements"][number], { type: "tool_call" }>;
+
 const INDENT = '  ';
 const INDENT_WIDTH = 2;
 const USER_MESSAGE_BORDER = '┃ ';
@@ -252,9 +254,7 @@ function pushMessageLines(
     }
 
     // tool_call element
-    const toolCall =
-      toolCalls.find((candidate) => candidate.id === element.toolCallId) ??
-      element.toolCall;
+    const toolCall = resolveToolCallForElement(element, toolCalls);
     if (!toolCall) {
       return;
     }
@@ -273,6 +273,25 @@ function pushMessageLines(
     const key = `m:${message.id}:cursor`;
     pushLine(key, <Text key={key} dimColor>{`${INDENT}▊`}</Text>);
   }
+}
+
+function resolveToolCallForElement(
+  element: ToolCallElement,
+  toolCalls: LiveToolCallRecord[],
+): LiveToolCallRecord | undefined {
+  if (element.runId) {
+    return toolCalls.find(
+      (candidate) =>
+        candidate.id === element.toolCallId &&
+        candidate.runId === element.runId,
+    ) ?? element.toolCall;
+  }
+
+  if (element.toolCall) {
+    return element.toolCall;
+  }
+
+  return toolCalls.find((candidate) => candidate.id === element.toolCallId);
 }
 
 /**

@@ -49,7 +49,10 @@ export const InlineToolCall: React.FC<InlineToolCallProps> = ({
   const [frameIndex, setFrameIndex] = React.useState(0);
 
   React.useEffect(() => {
-    if (toolCall.status !== 'running' || !toolCall.startedAtMs) {
+    if (
+      (toolCall.status !== 'running' && toolCall.status !== 'pending') ||
+      !toolCall.startedAtMs
+    ) {
       setFrameIndex(0);
       return;
     }
@@ -79,10 +82,14 @@ export const InlineToolCall: React.FC<InlineToolCallProps> = ({
     switch (status) {
       case 'running':
         return RUNNING_TOOL_FRAMES[frameIndex];
+      case 'pending':
+        return '○';
       case 'success':
         return '✓';
       case 'failed':
         return '✗';
+      case 'cancelled':
+        return '⊘';
       default:
         return '?';
     }
@@ -92,10 +99,14 @@ export const InlineToolCall: React.FC<InlineToolCallProps> = ({
     switch (status) {
       case 'running':
         return 'yellow' as const;
+      case 'pending':
+        return 'gray' as const;
       case 'success':
         return 'green' as const;
       case 'failed':
         return 'red' as const;
+      case 'cancelled':
+        return 'yellow' as const;
       default:
         return 'gray' as const;
     }
@@ -104,9 +115,8 @@ export const InlineToolCall: React.FC<InlineToolCallProps> = ({
   const getDuration = (): string => {
     if (!toolCall.startedAtMs) return '';
 
-    const endTime = toolCall.finishedAtMs ?? (
-      toolCall.status === 'running' ? nowMs : toolCall.startedAtMs
-    );
+    const isActive = toolCall.status === 'running' || toolCall.status === 'pending';
+    const endTime = toolCall.finishedAtMs ?? (isActive ? nowMs : toolCall.startedAtMs);
     const elapsedMs = endTime - toolCall.startedAtMs;
 
     return formatElapsedDuration(elapsedMs, toolCall.status);

@@ -39,7 +39,7 @@ export const OutputsView: React.FC<OutputsViewProps> = ({ artifacts, events }) =
                 <Text dimColor>#{index + 1} </Text>
                 <Text color="yellow">{sourceLabel(artifact, events)}</Text>
               </Box>
-              <ArtifactCard artifact={artifact} />
+              <ArtifactCard artifact={artifact} keyboardActive={index === 0} />
             </Box>
           ))}
         </Box>

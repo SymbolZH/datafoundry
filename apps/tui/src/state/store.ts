@@ -153,6 +153,7 @@ class StateStore {
    */
   handleLiveRunEvent(event: { type?: string; [key: string]: unknown }): void {
     const eventRunId = runIdFromEvent(event);
+    const previousRunId = this.state.runId;
     const clientRunId =
       typeof event._clientRunId === "string" && event._clientRunId.length > 0
         ? event._clientRunId
@@ -218,6 +219,7 @@ class StateStore {
         stateWithNewToolCalls,
         toolCallId,
         newToolCallsById.get(toolCallId),
+        liveRunId,
       ) as TuiAppState;
     }
     for (const toolCall of newLiveRun.toolCalls) {
@@ -225,6 +227,7 @@ class StateStore {
         stateWithNewToolCalls,
         toolCall,
         liveRunId,
+        previousRunId,
       ) as TuiAppState;
     }
 
