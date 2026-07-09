@@ -292,8 +292,12 @@ export const App: React.FC<AppProps> = ({
   const scrollableRowCount = chatViewportRows(terminalRows, bottomRowCountForViewport);
   const chatViewportRowCount = scrollableRowCount;
   const pickerOpen = sessionPickerOpen || skillPickerOpen;
+  const agentResponding = state.runStatus === 'running' && state.agentResponseComplete !== true;
+  const latestMessage = visibleMessages[visibleMessages.length - 1];
+  const assistantReplying = latestMessage?.role === 'assistant' && latestMessage.isStreaming === true;
   const inputDisabled = state.connectionStatus !== 'connected'
-    || state.runStatus === 'running'
+    || agentResponding
+    || assistantReplying
     || isRestoringSession;
   const inputCommands = useMemo(
     () => uniqueStrings([
@@ -909,7 +913,14 @@ export const App: React.FC<AppProps> = ({
       const runId = runInput.runId;
 
       // Set run status to running
-      store.handleLiveRunEvent({ type: 'RUN_STARTED' });
+      store.handleLiveRunEvent({ type: 'RUN_STARTED', runId });
+
+      const isCurrentRun = () => store.getState().runId === runId;
+      const handleCurrentRunEvent = (event: { type?: string; [key: string]: unknown }) => {
+        if (isCurrentRun()) {
+          store.handleLiveRunEvent(event);
+        }
+      };
 
       if (attempt === 0) {
         store.addAssistantMessage('', true);
@@ -921,7 +932,7 @@ export const App: React.FC<AppProps> = ({
       let textFlushTimer: ReturnType<typeof setTimeout> | undefined;
 
       const applyTextFlush = (flush: AssistantTextFlush | null) => {
-        if (!flush) return;
+        if (!flush || !isCurrentRun()) return;
         if (flush.type === 'text') {
           store.updateAssistantMessage(flush.content, flush.isStreaming);
         } else {
@@ -954,6 +965,10 @@ export const App: React.FC<AppProps> = ({
       try {
         // Stream events from the agent
         for await (const event of client.runAgent(runInput)) {
+          if (!isCurrentRun()) {
+            continue;
+          }
+
           // Handle specific event types for message streaming
           if (event.type === 'TEXT_MESSAGE_CONTENT' || event.type === 'TEXT_MESSAGE_CHUNK') {
             const delta = (event as { delta?: unknown }).delta;
@@ -972,7 +987,7 @@ export const App: React.FC<AppProps> = ({
             flushTextBuffer(false);
           } else if (event.type === 'RUN_FINISHED') {
             flushTextBuffer(false);
-            store.handleLiveRunEvent(event as { type?: string; [key: string]: unknown });
+            handleCurrentRunEvent(event as { type?: string; [key: string]: unknown });
           } else if (event.type === 'RUN_ERROR') {
             flushTextBuffer();
             const message = (event as { message?: unknown }).message;
@@ -987,19 +1002,22 @@ export const App: React.FC<AppProps> = ({
             store.updateAssistantMessage(`Error: ${friendlyMessage}`, false);
           } else if (event.type === 'TOOL_CALL_START') {
             startNextTextSegment();
-            store.handleLiveRunEvent(event as { type?: string; [key: string]: unknown });
+            handleCurrentRunEvent(event as { type?: string; [key: string]: unknown });
           } else {
             // Feed non-text events into the state reducer. Text chunks are
             // rendered through the buffered assistant message path above.
-            store.handleLiveRunEvent(event as { type?: string; [key: string]: unknown });
+            handleCurrentRunEvent(event as { type?: string; [key: string]: unknown });
           }
         }
         flushTextBuffer(false);
+        if (!isCurrentRun()) {
+          return;
+        }
 
         // Ensure run is marked as finished
         const finalState = store.getState();
         if (finalState.runStatus === 'running') {
-          store.handleLiveRunEvent({ type: 'RUN_FINISHED' });
+          handleCurrentRunEvent({ type: 'RUN_FINISHED', runId });
         }
 
         // Clear any previous errors on success
@@ -1007,6 +1025,9 @@ export const App: React.FC<AppProps> = ({
         setRetryCount(0);
       } catch (error) {
         flushTextBuffer();
+        if (!isCurrentRun()) {
+          return;
+        }
 
         // Classify the error
         const classifiedError = classifyError(error);
@@ -1046,6 +1067,7 @@ export const App: React.FC<AppProps> = ({
           // Non-retryable or max retries reached
           store.handleLiveRunEvent({
             type: 'RUN_ERROR',
+            runId,
             message: friendlyMessage,
           });
 

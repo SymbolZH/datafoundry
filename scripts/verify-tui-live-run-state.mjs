@@ -5,6 +5,7 @@ const {
   createInitialLiveRun,
   reduceLiveRunEvent,
 } = await import("../apps/tui/dist/state/live-run-state.js");
+const { store } = await import("../apps/tui/dist/state/store.js");
 
 function startSqlRun() {
   let run = createInitialLiveRun();
@@ -50,6 +51,33 @@ function startSqlRun() {
   assert.equal(run.toolCalls[0].id, "tool-sql-1");
   assert.equal(run.toolCalls[0].name, "run_sql_readonly");
   assert.equal(run.toolCalls[0].status, "failed");
+}
+
+{
+  let run = createInitialLiveRun();
+  run = reduceLiveRunEvent(run, { type: "RUN_STARTED", runId: "run-current" });
+  assert.equal(run.runId, "run-current");
+
+  store.reset();
+  store.handleLiveRunEvent({ type: "RUN_STARTED", runId: "run-current" });
+  assert.equal(store.getState().agentResponseComplete, false);
+  store.handleLiveRunEvent({
+    type: "CUSTOM",
+    name: "run.response.completed",
+    value: { runId: "run-stale" },
+  });
+  assert.equal(store.getState().agentResponseComplete, false);
+  store.handleLiveRunEvent({
+    type: "CUSTOM",
+    name: "run.response.completed",
+    value: { runId: "run-current" },
+  });
+  assert.equal(store.getState().agentResponseComplete, true);
+  assert.equal(store.getState().runStatus, "running");
+  store.handleLiveRunEvent({ type: "RUN_FINISHED", runId: "run-stale" });
+  assert.equal(store.getState().runStatus, "running");
+  store.handleLiveRunEvent({ type: "RUN_FINISHED", runId: "run-current" });
+  assert.equal(store.getState().runStatus, "completed");
 }
 
 console.log("TUI live-run-state regression checks passed.");

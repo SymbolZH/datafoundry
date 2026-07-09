@@ -81,6 +81,8 @@ export type SessionUsageStats = {
 };
 
 export type LiveRun = {
+  runId?: string | undefined;
+  agentResponseComplete?: boolean | undefined;
   plan: LivePlanTask[];
   events: TimelineEvent[];
   artifacts: DataArtifact[];
@@ -206,12 +208,15 @@ export function reduceLiveRunEvent(state: LiveRun, event: AgUiLikeEvent): LiveRu
     case "RUN_STARTED":
       return {
         ...createInitialLiveRun(),
+        ...optionalRunId(runIdFromEvent(event)),
+        agentResponseComplete: false,
         runStatus: "running",
         runStartedAt: Date.now(),
       };
     case "RUN_FINISHED":
       return {
         ...state,
+        agentResponseComplete: true,
         runStatus: "completed",
         runFinishedAt: Date.now(),
         plan: state.plan.map((task) =>
@@ -224,6 +229,7 @@ export function reduceLiveRunEvent(state: LiveRun, event: AgUiLikeEvent): LiveRu
     case "RUN_ERROR":
       return {
         ...state,
+        agentResponseComplete: true,
         runStatus: "failed",
         runFinishedAt: Date.now(),
         errorMessage: stringValue(event.message) ?? "Agent 运行失败",
@@ -260,7 +266,13 @@ export function planTasksToTimelineSteps(tasks: LivePlanTask[]): TimelineStep[] 
 function reduceStateSnapshot(state: LiveRun, event: AgUiLikeEvent): LiveRun {
   const snapshot = recordValue(event.snapshot);
   const status = liveStatusFromValue(snapshot?.runStatus);
-  return status ? { ...state, runStatus: status } : state;
+  const runId = stringValue(snapshot?.runId);
+  if (!status && !runId) return state;
+  return {
+    ...state,
+    ...(status ? { runStatus: status } : {}),
+    ...optionalRunId(runId),
+  };
 }
 
 function reduceStateDelta(state: LiveRun, event: AgUiLikeEvent): LiveRun {
@@ -640,6 +652,10 @@ function parseSchemaTables(parsed: Record<string, unknown> | null): SchemaTable[
 }
 
 function reduceCustomEvent(state: LiveRun, event: AgUiLikeEvent): LiveRun {
+  if (event.name === "run.response.completed") {
+    return { ...state, agentResponseComplete: true };
+  }
+
   if (event.name === "sql_audit") {
     const value = recordValue(event.value);
     const audit: LiveAudit = {
@@ -1240,6 +1256,15 @@ function liveStatusFromValue(value: unknown): LiveRunStatus | null {
   if (value === "running" || value === "completed" || value === "failed") return value;
   return null;
 }
+
+export function runIdFromEvent(event: AgUiLikeEvent): string | undefined {
+  return stringValue(event.runId) ??
+    stringValue(recordValue(event.snapshot)?.runId) ??
+    stringValue(recordValue(event.value)?.runId);
+}
+
+const optionalRunId = (runId: string | undefined): { runId?: string | undefined } =>
+  runId ? { runId } : {};
 
 function statusSummary(value: unknown): string {
   const status = stringValue(value);
