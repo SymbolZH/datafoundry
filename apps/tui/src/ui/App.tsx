@@ -3,17 +3,16 @@ import { Box, Text, useApp, useInput, useStdin, measureElement, type DOMElement 
 import { randomUUID } from 'node:crypto';
 import { StatusFooter } from './Header.js';
 import { ChatArea, type ChatAreaRef } from './ChatArea.js';
-import { OutputsView } from './OutputsView.js';
+import { OutputsScreen } from './OutputsView.js';
 import { ActivityPanel } from './ActivityPanel.js';
 import { EnhancedInputBox } from './components/EnhancedInputBox.js';
 import { QueuedPromptDisplay } from './components/QueuedPromptDisplay.js';
 import { WorkspaceFrame, availableContentRows, estimateControlsRows } from './workspace-layout.js';
 import { useTerminalSize } from './use-terminal-size.js';
-import { KeybindingsHelp } from './KeybindingsHelp.js';
 import { SessionPicker } from './SessionPicker.js';
 import { ResourcePicker, type ResourcePickerItem } from './ResourcePicker.js';
 import { HomeSplash } from './HomeSplash.js';
-import { DEFAULT_COMMANDS, getStatusBarShortcuts } from './keybindings.js';
+import { DEFAULT_COMMANDS } from './keybindings.js';
 import { AssistantTextStreamBuffer, type AssistantTextFlush } from './assistant-stream-buffer.js';
 import { createWheelScrollDecoder } from '../input/mouse-wheel.js';
 import {
@@ -43,7 +42,6 @@ interface AppProps {
   } | undefined;
 }
 
-type TabType = 'chat' | 'stats' | 'config' | 'outputs';
 type CommandNotice = {
   message: string;
   kind: 'info' | 'error';
@@ -219,7 +217,6 @@ export const App: React.FC<AppProps> = ({
   const { stdin } = useStdin();
   const { columns: terminalColumns, rows: terminalRows } = useTerminalSize();
   const [state, setState] = useState<TuiAppState>(store.getState());
-  const [activeTab, setActiveTab] = useState<TabType>('chat');
   const [inputFocused, setInputFocused] = useState(false);
   const [commandNotice, setCommandNotice] = useState<CommandNotice | null>(null);
   const [activeDatasourceId, setActiveDatasourceId] = useState<string | undefined>(
@@ -233,6 +230,7 @@ export const App: React.FC<AppProps> = ({
   const [pickerLoading, setPickerLoading] = useState(false);
   const [pickerError, setPickerError] = useState<string | undefined>(undefined);
   const [resumeLoadingSessionId, setResumeLoadingSessionId] = useState<string | null>(null);
+  const [outputsOpen, setOutputsOpen] = useState(false);
   const [skillPickerOpen, setSkillPickerOpen] = useState(false);
   const [skillPickerItems, setSkillPickerItems] = useState<ResourcePickerItem[]>([]);
   const [skillShortcutItems, setSkillShortcutItems] = useState<ResourcePickerItem[]>(
@@ -248,7 +246,6 @@ export const App: React.FC<AppProps> = ({
   const chatAreaRef = useRef<ChatAreaRef>(null);
   const mainControlsRef = useRef<DOMElement | null>(null);
   const ctrlCTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const activeTabRef = useRef(activeTab);
   const applyChatScrollDeltaRef = useRef<(delta: number) => void>(() => {});
   const startupResumeAttempted = useRef(false);
   const queuedPromptsRef = useRef<string[]>([]);
@@ -267,8 +264,7 @@ export const App: React.FC<AppProps> = ({
   const visibleMessages = state.messages;
   const isRestoringSession = resumeLoadingSessionId !== null;
   const showLiveActivity = false;
-  const isHomeScreen = activeTab === 'chat'
-    && visibleMessages.length === 0
+  const isHomeScreen = visibleMessages.length === 0
     && state.messages.length === 0
     && !commandNotice
     && queuedPrompts.length === 0
@@ -280,9 +276,9 @@ export const App: React.FC<AppProps> = ({
     && !isRestoringSession
     ? startup
     : undefined;
-  const pickerOpen = sessionPickerOpen || skillPickerOpen;
+  const pickerOpen = sessionPickerOpen || skillPickerOpen || outputsOpen;
   const controlsLayoutKey = [
-    activeTab,
+    'chat',
     isHomeScreen ? 'home' : 'workspace',
     pickerOpen ? 'picker-open' : 'picker-closed',
     commandNotice ? `${commandNotice.kind}:${commandNotice.message}` : 'clean',
@@ -300,7 +296,7 @@ export const App: React.FC<AppProps> = ({
   const estimatedControlsRowCount = estimateControlsRows({
     commandNotice: Boolean(commandNotice),
     queuedPromptCount: queuedPrompts.length,
-    activeTab,
+    activeTab: 'chat',
     homeScreen: isHomeScreen,
     inputBoxRows: reportedInputBoxRows ?? undefined,
   });
@@ -416,7 +412,7 @@ export const App: React.FC<AppProps> = ({
   }, [activeDatasourceId, activeSkillId, state.workspaceConfig]);
 
   const scrollChatBy = (delta: number): void => {
-    if (activeTab !== 'chat' || delta === 0) return;
+    if (delta === 0) return;
     chatAreaRef.current?.scrollBy(delta);
   };
 
@@ -424,9 +420,8 @@ export const App: React.FC<AppProps> = ({
     chatAreaRef.current?.scrollToBottom();
   };
 
-  activeTabRef.current = activeTab;
   applyChatScrollDeltaRef.current = (delta: number): void => {
-    if (activeTabRef.current !== 'chat' || delta === 0) return;
+    if (delta === 0) return;
     chatAreaRef.current?.scrollBy(delta);
   };
 
@@ -589,7 +584,6 @@ export const App: React.FC<AppProps> = ({
       clearQueuedPrompts();
       store.restoreSession(restored);
       chatAreaRef.current?.reset();
-      setActiveTab('chat');
       setCommandNotice({
         kind: 'info',
         message: `Resumed session ${restored.title ? `"${restored.title}" ` : ''}(${restored.threadId}).`,
@@ -779,7 +773,6 @@ export const App: React.FC<AppProps> = ({
     clearQueuedPrompts();
     store.startNewSession(createThreadId());
     chatAreaRef.current?.reset();
-    setActiveTab('chat');
   };
 
   // Handle global keyboard shortcuts
@@ -794,22 +787,22 @@ export const App: React.FC<AppProps> = ({
     // Ignore input when typing in the input box
     if (pickerOpen || inputFocused) return;
 
-    if (activeTab === 'chat' && key.pageUp) {
+    if (key.pageUp) {
       scrollChatBy(Math.max(3, Math.floor(chatViewportRowCount * 0.8)));
       return;
     }
 
-    if (activeTab === 'chat' && key.pageDown) {
+    if (key.pageDown) {
       scrollChatBy(-Math.max(3, Math.floor(chatViewportRowCount * 0.8)));
       return;
     }
 
-    if (activeTab === 'chat' && key.home) {
+    if (key.home) {
       chatAreaRef.current?.scrollToTop();
       return;
     }
 
-    if (activeTab === 'chat' && key.end) {
+    if (key.end) {
       jumpToLatest();
       return;
     }
@@ -879,7 +872,6 @@ export const App: React.FC<AppProps> = ({
         if (result.data && typeof result.data === 'object') {
           const commandData = result.data as {
             action?: string;
-            tab?: unknown;
             sessionId?: unknown;
             datasourceId?: unknown;
             skillId?: unknown;
@@ -893,15 +885,12 @@ export const App: React.FC<AppProps> = ({
             clearQueuedPrompts();
             store.startNewSession(createThreadId());
             chatAreaRef.current?.reset();
-            setActiveTab('chat');
           } else if (action === 'exit_application') {
             exitApplication();
             return;
-          } else if (action === 'switch_tab') {
-            const tab = commandData.tab;
-            if (tab === 'chat' || tab === 'stats' || tab === 'config' || tab === 'outputs') {
-              setActiveTab(tab);
-            }
+          } else if (action === 'open_outputs') {
+            setOutputsOpen(true);
+            return;
           } else if (action === 'resume_session') {
             const sessionId = typeof commandData.sessionId === 'string'
               ? commandData.sessionId
@@ -1278,119 +1267,7 @@ export const App: React.FC<AppProps> = ({
         toolCalls: [],
         events: [],
       };
-  const showResumeLoading = activeTab === 'chat'
-    && isRestoringSession
-    && state.messages.length === 0;
-
-  // Render tab navigation
-  const renderTabs = () => {
-    const tabs: Array<{ key: TabType; label: string }> = [
-      { key: 'chat', label: 'Chat' },
-      { key: 'stats', label: 'Stats' },
-      { key: 'config', label: 'Config' },
-      { key: 'outputs', label: 'Outputs' },
-    ];
-
-    return (
-      <Box marginBottom={0}>
-        {tabs.map((tab, index) => (
-          <React.Fragment key={tab.key}>
-            {index > 0 && <Text color="gray"> | </Text>}
-            <Text
-              color={activeTab === tab.key ? 'cyan' : 'white'}
-              bold={activeTab === tab.key}
-              dimColor={activeTab !== tab.key}
-            >
-              {tab.label}
-            </Text>
-          </React.Fragment>
-        ))}
-      </Box>
-    );
-  };
-
-  // Render stats panel content
-  const renderStatsPanel = () => {
-    const messageCount = state.messages.length;
-    const userMessages = state.messages.filter(m => m.role === 'user').length;
-    const assistantMessages = state.messages.filter(m => m.role === 'assistant').length;
-    const toolCallCount = state.toolCalls.length;
-    const eventCount = state.events.length;
-    const errorLogs = errorLogger.getRecentLogs(5);
-
-    return (
-      <Box flexDirection="column" paddingX={2}>
-        <Text bold color="cyan">Session Statistics</Text>
-        <Text> </Text>
-        <Text>Total Messages: {messageCount}</Text>
-        <Text>User Messages: {userMessages}</Text>
-        <Text>Assistant Messages: {assistantMessages}</Text>
-        <Text>Tool Calls: {toolCallCount}</Text>
-        <Text>Events: {eventCount}</Text>
-        <Text> </Text>
-        <Text bold color="yellow">Connection</Text>
-        <Text>Status: {state.connectionStatus}</Text>
-        <Text>Run Status: {state.runStatus}</Text>
-        {state.lastError && (
-          <>
-            <Text> </Text>
-            <Text bold color="red">Last Error</Text>
-            <Text color="red">{state.lastError}</Text>
-          </>
-        )}
-        {errorLogs.length > 0 && (
-          <>
-            <Text> </Text>
-            <Text bold color="red">Recent Errors</Text>
-            {errorLogs.map((log, idx) => (
-              <Box key={idx} flexDirection="column" marginTop={1}>
-                <Text dimColor>
-                  {log.timestamp.toLocaleTimeString()} - {log.error.category}
-                </Text>
-                <Text color="red">{log.error.userMessage}</Text>
-              </Box>
-            ))}
-          </>
-        )}
-      </Box>
-    );
-  };
-
-  // Render config panel content
-  const renderConfigPanel = () => {
-    return (
-      <Box flexDirection="column" paddingX={2}>
-        <Text bold color="cyan">Configuration</Text>
-        <Text> </Text>
-        <Text>Thread ID: {state.threadId || 'Not set'}</Text>
-        {activeDatasourceId && <Text>Datasource ID: {activeDatasourceId}</Text>}
-        {activeSkillId && <Text>Skill ID: {activeSkillId}</Text>}
-        <Text> </Text>
-        <Text bold color="yellow">Settings</Text>
-        <Text dimColor>No configurable settings yet</Text>
-        <Text> </Text>
-        <KeybindingsHelp compact />
-      </Box>
-    );
-  };
-
-  // Render status bar with shortcuts
-  const renderStatusBar = () => {
-    const shortcuts = getStatusBarShortcuts();
-
-    return (
-      <Box
-        borderStyle="single"
-        borderColor="gray"
-        paddingX={1}
-        marginTop={1}
-      >
-        <Text dimColor>
-          {shortcuts.map(s => `${s.key}: ${s.action}`).join(' | ')}
-        </Text>
-      </Box>
-    );
-  };
+  const showResumeLoading = isRestoringSession && state.messages.length === 0;
 
   return (
     <>
@@ -1446,6 +1323,24 @@ export const App: React.FC<AppProps> = ({
             }}
           />
         </Box>
+      ) : outputsOpen ? (
+        <Box
+          flexDirection="column"
+          minHeight={terminalRows}
+          width={terminalColumns}
+          overflowY="hidden"
+          paddingX={1}
+        >
+          <OutputsScreen
+            artifacts={visibleArtifacts}
+            events={state.events}
+            columns={Math.max(20, terminalColumns - 2)}
+            rows={terminalRows}
+            onCancel={() => {
+              setOutputsOpen(false);
+            }}
+          />
+        </Box>
       ) : (
         <WorkspaceFrame
           rows={terminalRows}
@@ -1459,8 +1354,7 @@ export const App: React.FC<AppProps> = ({
               flexShrink={0}
               overflowY="hidden"
             >
-              {activeTab === 'chat' ? (
-                isHomeScreen ? (
+              {isHomeScreen ? (
                   <Box
                     flexDirection="column"
                     height={scrollableRowCount}
@@ -1492,7 +1386,7 @@ export const App: React.FC<AppProps> = ({
                       )}
                     />
                   </Box>
-                ) : showResumeLoading ? (
+              ) : showResumeLoading ? (
                   <Box
                     flexDirection="column"
                     flexGrow={1}
@@ -1506,7 +1400,7 @@ export const App: React.FC<AppProps> = ({
                         : `Loading session ${resumeLoadingSessionId}...`}
                     </Text>
                   </Box>
-                ) : (
+              ) : (
                   <>
                     <Box
                       flexDirection="column"
@@ -1544,40 +1438,16 @@ export const App: React.FC<AppProps> = ({
                       </Box>
                     )}
                   </>
-                )
-              ) : activeTab === 'stats' ? (
-                <Box flexDirection="column" flexGrow={1} overflowY="hidden">
-                  {renderStatsPanel()}
-                </Box>
-              ) : activeTab === 'config' ? (
-                <Box flexDirection="column" flexGrow={1} overflowY="hidden">
-                  {renderConfigPanel()}
-                </Box>
-              ) : (
-                <Box flexDirection="column" flexGrow={1} overflowY="hidden">
-                  <OutputsView
-                    artifacts={visibleArtifacts}
-                    events={state.events}
-                  />
-                </Box>
               )}
             </Box>
           }
           bottom={
             <Box ref={mainControlsRef} flexDirection="column" flexShrink={0}>
-              {activeTab !== 'chat' && renderStatusBar()}
-
               {commandNotice && (
                 <Box paddingX={1} flexShrink={0}>
                   <Text color={commandNotice.kind === 'error' ? 'red' : 'cyan'}>
                     {commandNotice.message}
                   </Text>
-                </Box>
-              )}
-
-              {activeTab !== 'chat' && (
-                <Box paddingX={1}>
-                  {renderTabs()}
                 </Box>
               )}
 
@@ -1605,7 +1475,7 @@ export const App: React.FC<AppProps> = ({
                 />
               )}
 
-              {(isHomeScreen || activeTab !== 'chat') && (
+              {isHomeScreen && (
                 <StatusFooter
                   connectionStatus={state.connectionStatus}
                   runStatus={state.runStatus}

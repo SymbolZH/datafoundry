@@ -106,7 +106,7 @@ export const KeybindingsHelp: React.FC<KeybindingsHelpProps> = ({ compact = fals
  */
 export const ShortcutsIndicator: React.FC = () => {
   const shortcuts = [
-    { key: 'Tab', desc: 'Switch' },
+    { key: 'Tab', desc: 'Complete' },
     { key: '↑/↓', desc: 'History' },
     { key: 'Ctrl+N', desc: 'New' },
     { key: 'Ctrl+L', desc: 'Clear' },
