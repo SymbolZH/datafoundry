@@ -239,6 +239,14 @@ export type ArtifactSummary = {
   type: ArtifactType;
   name: string;
   preview_json?: unknown;
+  /**
+   * Authoritative origin of the artifact so the frontend can link it back to the
+   * producing run / tool call / step without heuristics (R-018). Populated from the
+   * artifact record's `run_id` and its `metadata_json` when present.
+   */
+  run_id?: string;
+  tool_call_id?: string;
+  step_id?: string;
 };
 
 export type AppErrorCode =
