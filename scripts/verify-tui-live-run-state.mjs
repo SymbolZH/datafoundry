@@ -80,4 +80,77 @@ function startSqlRun() {
   assert.equal(store.getState().runStatus, "completed");
 }
 
+{
+  store.reset();
+  store.handleLiveRunEvent({ type: "RUN_STARTED", runId: "client-run" });
+  assert.equal(store.getState().runId, "client-run");
+
+  store.handleLiveRunEvent({
+    type: "STATE_SNAPSHOT",
+    snapshot: { runId: "server-run", runStatus: "running" },
+    _clientRunId: "client-run",
+  });
+  assert.equal(store.getState().runId, "server-run");
+
+  store.handleLiveRunEvent({
+    type: "CUSTOM",
+    name: "run.response.completed",
+    value: { runId: "server-run" },
+  });
+  assert.equal(store.getState().agentResponseComplete, true);
+
+  store.handleLiveRunEvent({ type: "RUN_FINISHED", runId: "server-run" });
+  assert.equal(store.getState().runStatus, "completed");
+}
+
+{
+  store.reset();
+  store.handleLiveRunEvent({ type: "RUN_STARTED", runId: "client-run-no-snapshot" });
+  store.handleLiveRunEvent({
+    type: "CUSTOM",
+    name: "run.response.completed",
+    value: { runId: "server-run-no-snapshot" },
+    _clientRunId: "client-run-no-snapshot",
+  });
+  assert.equal(store.getState().agentResponseComplete, true);
+  assert.equal(store.getState().runStatus, "running");
+  store.handleLiveRunEvent({
+    type: "RUN_FINISHED",
+    runId: "server-run-no-snapshot",
+    _clientRunId: "client-run-no-snapshot",
+  });
+  assert.equal(store.getState().runStatus, "completed");
+}
+
+{
+  store.reset();
+  store.handleLiveRunEvent({ type: "RUN_STARTED", runId: "tool-run-1" });
+  store.addAssistantMessage("", true);
+  store.handleLiveRunEvent({
+    type: "TOOL_CALL_START",
+    toolCallId: "tool-call-1",
+    toolCallName: "inspect_schema",
+  });
+  store.handleLiveRunEvent({
+    type: "TOOL_CALL_RESULT",
+    toolCallId: "tool-call-1",
+    toolCallName: "inspect_schema",
+    content: JSON.stringify({ tables: [] }),
+  });
+  store.handleLiveRunEvent({ type: "RUN_FINISHED", runId: "tool-run-1" });
+
+  const firstAssistant = store.getState().messages.find((message) => message.role === "assistant");
+  const toolElement = firstAssistant?.elements.find((element) => element.type === "tool_call");
+  assert.equal(toolElement?.toolCallId, "tool-call-1");
+  assert.equal(toolElement?.toolCall?.status, "success");
+
+  store.handleLiveRunEvent({ type: "RUN_STARTED", runId: "tool-run-2" });
+  assert.equal(store.getState().toolCalls.length, 0);
+  const retainedToolElement = store
+    .getState()
+    .messages.find((message) => message.role === "assistant")
+    ?.elements.find((element) => element.type === "tool_call");
+  assert.equal(retainedToolElement?.toolCall?.status, "success");
+}
+
 console.log("TUI live-run-state regression checks passed.");

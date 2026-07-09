@@ -50,6 +50,7 @@ export {
   updateLastAssistantMessage,
   appendToLastAssistantMessage,
   insertToolCallIntoLastMessage,
+  updateToolCallInMessages,
   finalizeLastAssistantMessage,
   clearMessages,
   getRecentMessages,

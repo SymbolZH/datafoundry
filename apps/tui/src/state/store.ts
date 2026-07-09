@@ -18,6 +18,7 @@ import {
   finalizeLastAssistantMessage,
   updateLastAssistantMessage,
   insertToolCallIntoLastMessage,
+  updateToolCallInMessages,
 } from "./message-history.js";
 import {
   updateConnectionStatus,
@@ -152,11 +153,25 @@ class StateStore {
    */
   handleLiveRunEvent(event: { type?: string; [key: string]: unknown }): void {
     const eventRunId = runIdFromEvent(event);
+    const clientRunId =
+      typeof event._clientRunId === "string" && event._clientRunId.length > 0
+        ? event._clientRunId
+        : undefined;
+    if (
+      event.type !== "RUN_STARTED" &&
+      clientRunId &&
+      this.state.runId &&
+      clientRunId !== this.state.runId
+    ) {
+      return;
+    }
+
     if (
       event.type !== "RUN_STARTED" &&
       eventRunId &&
       this.state.runId &&
-      eventRunId !== this.state.runId
+      eventRunId !== this.state.runId &&
+      clientRunId !== this.state.runId
     ) {
       return;
     }
@@ -189,15 +204,27 @@ class StateStore {
     const newToolCallIds = newLiveRun.toolCalls
       .filter((toolCall) => !previousToolCallIds.has(toolCall.id))
       .map((toolCall) => toolCall.id);
+    const newToolCallsById = new Map(
+      newLiveRun.toolCalls.map((toolCall) => [toolCall.id, toolCall]),
+    );
     const hasNewRunningToolCall = newLiveRun.toolCalls.some((toolCall) => {
       const previous = previousToolCallsById.get(toolCall.id);
       return toolCall.status === "running" && previous?.status !== "running";
     });
     let stateWithNewToolCalls: TuiAppState = this.state;
+    const liveRunId = newLiveRun.runId ?? this.state.runId;
     for (const toolCallId of newToolCallIds) {
       stateWithNewToolCalls = insertToolCallIntoLastMessage(
         stateWithNewToolCalls,
         toolCallId,
+        newToolCallsById.get(toolCallId),
+      ) as TuiAppState;
+    }
+    for (const toolCall of newLiveRun.toolCalls) {
+      stateWithNewToolCalls = updateToolCallInMessages(
+        stateWithNewToolCalls,
+        toolCall,
+        liveRunId,
       ) as TuiAppState;
     }
 

@@ -20,6 +20,7 @@ import {
   store,
   type TuiAppState,
 } from '../state/index.js';
+import { runIdFromEvent } from '../state/live-run-state.js';
 import {
   persistWorkspaceConfig,
   type WorkspaceConfigItem,
@@ -46,6 +47,7 @@ type CommandNotice = {
   message: string;
   kind: 'info' | 'error';
 };
+type RuntimeEvent = { type?: string; [key: string]: unknown };
 const SCROLL_FRAME_MS = 16;
 const SCROLL_ROWS_PER_FRAME = 3;
 const MAX_PENDING_SCROLL_ROWS = 120;
@@ -295,8 +297,7 @@ export const App: React.FC<AppProps> = ({
   const agentResponding = state.runStatus === 'running' && state.agentResponseComplete !== true;
   const latestMessage = visibleMessages[visibleMessages.length - 1];
   const assistantReplying = latestMessage?.role === 'assistant' && latestMessage.isStreaming === true;
-  const inputDisabled = state.connectionStatus !== 'connected'
-    || agentResponding
+  const inputDisabled = agentResponding
     || assistantReplying
     || isRestoringSession;
   const inputCommands = useMemo(
@@ -915,14 +916,40 @@ export const App: React.FC<AppProps> = ({
     const runAttempt = async (attempt: number): Promise<void> => {
       const runInput = createRunInput();
       const runId = runInput.runId;
+      const acceptedRunIds = new Set<string>([runId]);
 
       // Set run status to running
       store.handleLiveRunEvent({ type: 'RUN_STARTED', runId });
 
-      const isCurrentRun = () => store.getState().runId === runId;
-      const handleCurrentRunEvent = (event: { type?: string; [key: string]: unknown }) => {
-        if (isCurrentRun()) {
-          store.handleLiveRunEvent(event);
+      const isCurrentRun = () => {
+        const currentRunId = store.getState().runId;
+        return currentRunId !== undefined && acceptedRunIds.has(currentRunId);
+      };
+      const currentAttemptRunId = () => {
+        const currentRunId = store.getState().runId;
+        return currentRunId !== undefined && acceptedRunIds.has(currentRunId)
+          ? currentRunId
+          : runId;
+      };
+      const shouldHandleRunEvent = (event?: RuntimeEvent) => {
+        if (!isCurrentRun()) return false;
+
+        const eventRunId = event ? runIdFromEvent(event) : undefined;
+        if (!eventRunId) return true;
+        if (acceptedRunIds.has(eventRunId)) return true;
+
+        // A backend may normalize the run id for resume/canonical identity.
+        // While this attempt is still current, treat the first new run id from
+        // this stream as an alias so later terminal events are not dropped.
+        acceptedRunIds.add(eventRunId);
+        return true;
+      };
+      const storeCurrentRunEvent = (event: RuntimeEvent) => {
+        store.handleLiveRunEvent({ ...event, _clientRunId: currentAttemptRunId() });
+      };
+      const handleCurrentRunEvent = (event: RuntimeEvent) => {
+        if (shouldHandleRunEvent(event)) {
+          storeCurrentRunEvent(event);
         }
       };
 
@@ -969,7 +996,8 @@ export const App: React.FC<AppProps> = ({
       try {
         // Stream events from the agent
         for await (const event of client.runAgent(runInput)) {
-          if (!isCurrentRun()) {
+          const runtimeEvent = event as RuntimeEvent;
+          if (!shouldHandleRunEvent(runtimeEvent)) {
             continue;
           }
 
@@ -991,11 +1019,12 @@ export const App: React.FC<AppProps> = ({
             flushTextBuffer(false);
           } else if (event.type === 'RUN_FINISHED') {
             flushTextBuffer(false);
-            handleCurrentRunEvent(event as { type?: string; [key: string]: unknown });
+            storeCurrentRunEvent(runtimeEvent);
           } else if (event.type === 'RUN_ERROR') {
             flushTextBuffer();
             const message = (event as { message?: unknown }).message;
             const errorMessage = typeof message === 'string' ? message : 'Agent run failed';
+            storeCurrentRunEvent(runtimeEvent);
 
             // Classify and log the error
             const classifiedError = classifyError(new Error(errorMessage));
@@ -1006,11 +1035,11 @@ export const App: React.FC<AppProps> = ({
             store.updateAssistantMessage(`Error: ${friendlyMessage}`, false);
           } else if (event.type === 'TOOL_CALL_START') {
             startNextTextSegment();
-            handleCurrentRunEvent(event as { type?: string; [key: string]: unknown });
+            storeCurrentRunEvent(runtimeEvent);
           } else {
             // Feed non-text events into the state reducer. Text chunks are
             // rendered through the buffered assistant message path above.
-            handleCurrentRunEvent(event as { type?: string; [key: string]: unknown });
+            storeCurrentRunEvent(runtimeEvent);
           }
         }
         flushTextBuffer(false);
@@ -1021,7 +1050,7 @@ export const App: React.FC<AppProps> = ({
         // Ensure run is marked as finished
         const finalState = store.getState();
         if (finalState.runStatus === 'running') {
-          handleCurrentRunEvent({ type: 'RUN_FINISHED', runId });
+          handleCurrentRunEvent({ type: 'RUN_FINISHED', runId: currentAttemptRunId() });
         }
 
         // Clear any previous errors on success
@@ -1071,8 +1100,9 @@ export const App: React.FC<AppProps> = ({
           // Non-retryable or max retries reached
           store.handleLiveRunEvent({
             type: 'RUN_ERROR',
-            runId,
+            runId: currentAttemptRunId(),
             message: friendlyMessage,
+            _clientRunId: currentAttemptRunId(),
           });
 
           // Add error message to chat with category indicator

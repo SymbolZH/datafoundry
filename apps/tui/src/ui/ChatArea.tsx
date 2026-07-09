@@ -144,9 +144,8 @@ const ChatAreaComponent = forwardRef<ChatAreaRef, ChatAreaProps>(({
   const resolvedViewport = viewport ?? 1;
   const safeScroll = effectiveScrollbackRows;
 
-  // Short conversations start at the top of the scroll viewport, matching
-  // OpenCode's session page. Once content exceeds the viewport, keep the latest
-  // rows visible unless the user has scrolled back.
+  // Match qwen-code's bottom-anchored transcript behavior: once content exceeds
+  // the viewport, keep the newest rows visible unless the user has scrolled back.
   const messageCount = totalMessageCount ?? messages.length;
   const hasContent = messageCount > 0;
 
@@ -157,17 +156,8 @@ const ChatAreaComponent = forwardRef<ChatAreaRef, ChatAreaProps>(({
   } else if (total <= resolvedViewport) {
     visible = lines;
   } else {
-    // Early sessions should not jump straight to the bottom when the startup
-    // banner is replaced by the first messages. Later sessions stay anchored to
-    // the latest row, unless that would hide a nearby message header.
-    const shouldPinEarlyConversation = messageCount <= 3 && safeScroll === 0;
-
-    if (shouldPinEarlyConversation) {
-      visible = lines.slice(0, resolvedViewport);
-    } else {
-      const rawTop = Math.max(0, total - resolvedViewport - safeScroll);
-      visible = lines.slice(rawTop, rawTop + resolvedViewport);
-    }
+    const rawTop = Math.max(0, total - resolvedViewport - safeScroll);
+    visible = lines.slice(rawTop, rawTop + resolvedViewport);
   }
 
   const bottomPadding = Math.max(0, resolvedViewport - visible.length);

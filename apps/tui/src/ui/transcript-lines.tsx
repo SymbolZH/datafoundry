@@ -252,7 +252,9 @@ function pushMessageLines(
     }
 
     // tool_call element
-    const toolCall = toolCalls.find((candidate) => candidate.id === element.toolCallId);
+    const toolCall =
+      toolCalls.find((candidate) => candidate.id === element.toolCallId) ??
+      element.toolCall;
     if (!toolCall) {
       return;
     }
