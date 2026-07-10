@@ -53,7 +53,7 @@ const packageRef = fileAssetService.createRef({
   filename: "SKILL.md",
   content: packageBody,
   declared_mime_type: "text/markdown",
-  source: "upload",
+  source: "skill-package",
   metadata: { kind: "skill-package" }
 });
 const resource = metadataStore.configResources.upsert({
@@ -143,7 +143,7 @@ const unselectedSkillRef = fileAssetService.createRef({
   filename: "SKILL.md",
   content: unselectedSkillBody,
   declared_mime_type: "text/markdown",
-  source: "upload",
+  source: "skill-package",
   metadata: { kind: "skill-package", skill: "unselected-report-smoke", version: "1.0.0" }
 });
 await materializeSkillPackages({
@@ -235,7 +235,7 @@ const builtinPackageRef = fileAssetService.createRef({
   filename: "SKILL.md",
   content: builtinPackageBody,
   declared_mime_type: "text/markdown",
-  source: "upload",
+  source: "skill-package",
   metadata: { builtin: true, kind: "skill-package" }
 });
 const builtinResource = metadataStore.configResources.upsert({

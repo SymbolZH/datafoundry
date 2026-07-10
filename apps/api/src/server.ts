@@ -1228,7 +1228,7 @@ const ensureBuiltinConfigResources = async (
       filename: "SKILL.md",
       content,
       declared_mime_type: "text/markdown",
-      source: "upload",
+      source: "skill-package",
       metadata: { builtin: true, kind: "skill-package", skill: parsed.name, version: parsed.version }
     });
     metadataStore.configResources.upsert({
