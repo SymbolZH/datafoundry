@@ -385,8 +385,8 @@ export const fileAssetRefDto = (input: ResolvedFileAssetRef): Record<string, unk
 /**
  * Map the internal FileAssetRefSource to the user-facing `origin` label used by the
  * frontend files panel (R-021): uploaded (user uploads), generated (run artifacts),
- * saved (cross-session workspace assets). Knowledge/run-attachment sources keep a
- * stable label so they are not silently dropped from the panel.
+ * saved (cross-session workspace assets). Non-file-library sources keep a stable label
+ * so callers can intentionally include them without treating them as reusable files.
  */
 export const fileAssetRefOrigin = (source: FileAssetRefSource): string => {
   switch (source) {
@@ -400,6 +400,8 @@ export const fileAssetRefOrigin = (source: FileAssetRefSource): string => {
       return "knowledge";
     case "run-attachment":
       return "run-attachment";
+    case "skill-package":
+      return "skill-package";
     default:
       return "other";
   }

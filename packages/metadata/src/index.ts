@@ -302,7 +302,13 @@ export type FileAssetRecord = {
   created_at: string;
 };
 
-export type FileAssetRefSource = "artifact" | "knowledge" | "run-attachment" | "upload" | "workspace";
+export type FileAssetRefSource =
+  | "artifact"
+  | "knowledge"
+  | "run-attachment"
+  | "skill-package"
+  | "upload"
+  | "workspace";
 
 export type FileAssetRefStatus = "ready" | "deleted";
 

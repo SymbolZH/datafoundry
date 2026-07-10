@@ -800,6 +800,12 @@ try {
   assert.deepEqual(skill.body.data.defaultKbIds, ["metrics-docs"]);
   assert.deepEqual(skill.body.data.defaultMcpIds, ["smoke-mcp"]);
   assert.equal(skill.body.data.modelProfileId, "smoke-openai-compatible");
+  const workspaceFileAssets = await requestJson("/api/v1/files?scope=workspace&origin=uploaded,saved");
+  assert.equal(workspaceFileAssets.response.status, 200);
+  assert.equal(
+    workspaceFileAssets.body.data.files.some((file) => file.id === skill.body.data.packageFileRefId),
+    false
+  );
   const skillDownload = await requestRaw(`/api/v1/skills/${skill.body.data.id}/download`);
   assert.equal(skillDownload.status, 200);
   assert.equal((await skillDownload.text()).includes("Inspect schema first."), true);

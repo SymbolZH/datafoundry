@@ -1804,7 +1804,7 @@ const handleFileRequest = async (
     const requestUrl = new URL(request.url ?? "/", "http://127.0.0.1");
     // Filtering (R-021). Three orthogonal dimensions, all backward compatible:
     //  - `source`/`sources`: comma-separated internal source enum
-    //    (artifact|knowledge|run-attachment|upload|workspace).
+    //    (artifact|knowledge|run-attachment|skill-package|upload|workspace).
     //  - `origin`: comma-separated display label (uploaded|generated|saved), mapped
     //    1:1 to the internal source enum. Lets the frontend ask for "files the user
     //    can reuse across sessions" without knowing the internal enum.
@@ -1843,7 +1843,7 @@ const handleFileRequest = async (
     const all = sources
       ? sources.map((source) => listOne(source)).flat()
       : listOne();
-    return ok({ files: all.map(fileAssetRefDto) });
+    return ok({ files: all.filter(isListableFileAssetRef).map(fileAssetRefDto) });
   }
   if (!id && request.method === "POST") {
     if (!isMultipart(request)) {
@@ -2069,6 +2069,17 @@ const parseMetadataJson = (metadataJson: string | undefined): Record<string, unk
     // malformed JSON
   }
   return null;
+};
+
+const isListableFileAssetRef = (
+  input: ReturnType<FileAssetService["listRefs"]>[number]
+): boolean => {
+  if (input.ref.source === "skill-package") {
+    return false;
+  }
+  // Older skill uploads were persisted as source="upload"; keep them out of the
+  // reusable workspace file library by honoring their metadata marker.
+  return parseMetadataJson(input.ref.metadata_json)?.kind !== "skill-package";
 };
 
 const handleArtifactRequest = async (
@@ -3567,7 +3578,7 @@ const skillUploadBody = async (
     filename: parsed.packageFileName,
     content: upload.file.content,
     declared_mime_type: upload.file.mimeType || mimeTypeForFilename(parsed.packageFileName),
-    source: "upload",
+    source: "skill-package",
     metadata: { kind: "skill-package", skill: parsed.name, version: parsed.version }
   });
   await materializeSkillPackages({
